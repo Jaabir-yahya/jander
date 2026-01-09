@@ -1,0 +1,435 @@
+{
+  "name": "07_send_payment_confirmation_v2",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "trade_id",
+              "name": "trade_id",
+              "value": "={{$json.trade_id}}",
+              "type": "string"
+            },
+            {
+              "id": "payment_id",
+              "name": "payment_id",
+              "value": "={{$json.payment_id}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/trades?trade_id=eq.{{$json.trade_id}}&select=trade_id,buyer_phone,seller_phone,total_amount,product_name,status&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-order",
+      "name": "Get Order Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/payments?payment_id=eq.{{$json.payment_id}}&select=payment_id,mpesa_ref,amount_kes,paid_at&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-payment",
+      "name": "Get Payment Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages' : 'https://graph.facebook.com/v18.0/' + $env.PHONE_NUMBER_ID + '/messages'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$('Get Order Details').first().json[0].buyer_phone}}"
+            },
+            {
+              "name": "type",
+              "value": "template"
+            },
+            {
+              "name": "template",
+              "value": "={{JSON.stringify({name: 'payment_confirmation', language: {code: 'en_US'}, components: [{type: 'body', parameters: [$('Get Order Details').first().json[0].trade_id, $('Get Payment Details').first().json[0].amount_kes, $('Get Payment Details').first().json[0].mpesa_ref]}]})}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-buyer",
+      "name": "Notify Buyer (Native WhatsApp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages' : 'https://graph.facebook.com/v18.0/' + $env.PHONE_NUMBER_ID + '/messages'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$('Get Order Details').first().json[0].seller_phone}}"
+            },
+            {
+              "name": "type",
+              "value": "template"
+            },
+            {
+              "name": "template",
+              "value": "={{JSON.stringify({name: 'payment_received', language: {code: 'en_US'}, components: [{type: 'body', parameters: [$('Get Order Details').first().json[0].trade_id, $('Get Payment Details').first().json[0].amount_kes, $('Get Order Details').first().json[0].buyer_phone]}]})}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-seller",
+      "name": "Notify Seller (Native WhatsApp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/message_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{$('Get Order Details').first().json[0].buyer_phone}}"
+            },
+            {
+              "name": "channel",
+              "value": "=whatsapp"
+            },
+            {
+              "name": "message_type",
+              "value": "=payment_confirmation"
+            },
+            {
+              "name": "status",
+              "value": "=sent"
+            },
+            {
+              "name": "template_name",
+              "value": "=payment_confirmation"
+            },
+            {
+              "name": "related_entity_type",
+              "value": "=trade"
+            },
+            {
+              "name": "related_entity_id",
+              "value": "={{$('Extract Input').first().json.trade_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-buyer-message",
+      "name": "Log Buyer Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/message_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{$('Get Order Details').first().json[0].seller_phone}}"
+            },
+            {
+              "name": "channel",
+              "value": "=whatsapp"
+            },
+            {
+              "name": "message_type",
+              "value": "=payment_received"
+            },
+            {
+              "name": "status",
+              "value": "=sent"
+            },
+            {
+              "name": "template_name",
+              "value": "=payment_received"
+            },
+            {
+              "name": "related_entity_type",
+              "value": "=trade"
+            },
+            {
+              "name": "related_entity_id",
+              "value": "={{$('Extract Input').first().json.trade_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-seller-message",
+      "name": "Log Seller Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/trades?trade_id=eq.{{$('Extract Input').first().json.trade_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "payment_confirmed_at",
+              "value": "={{new Date().toISOString()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-order",
+      "name": "Update Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "success",
+              "name": "success",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "buyer_notified",
+              "name": "buyer_notified",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "seller_notified",
+              "name": "seller_notified",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "trade_id",
+              "name": "trade_id",
+              "value": "={{$('Extract Input').first().json.trade_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Extract Input": {
+      "main": [[{"node": "Get Order Details", "type": "main", "index": 0}, {"node": "Get Payment Details", "type": "main", "index": 0}]]
+    },
+    "Get Order Details": {
+      "main": [[{"node": "Notify Buyer (Native WhatsApp)", "type": "main", "index": 0}]]
+    },
+    "Get Payment Details": {
+      "main": [[{"node": "Notify Seller (Native WhatsApp)", "type": "main", "index": 0}]]
+    },
+    "Notify Buyer (Native WhatsApp)": {
+      "main": [[{"node": "Log Buyer Message", "type": "main", "index": 0}]]
+    },
+    "Notify Seller (Native WhatsApp)": {
+      "main": [[{"node": "Log Seller Message", "type": "main", "index": 0}]]
+    },
+    "Log Buyer Message": {
+      "main": [[{"node": "Update Order", "type": "main", "index": 0}]]
+    },
+    "Log Seller Message": {
+      "main": [[{"node": "Update Order", "type": "main", "index": 0}]]
+    },
+    "Update Order": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "2",
+  "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for WhatsApp API and Supabase. No custom services. See docs/NATIVE_INTEGRATIONS.md"
+}
+

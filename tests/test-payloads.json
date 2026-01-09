@@ -1,0 +1,132 @@
+{
+  "whatsapp_webhook_smsleopard": {
+    "message": {
+      "id": "wamid.XXX",
+      "from": "+254700456789",
+      "type": "text",
+      "timestamp": "1704787200",
+      "text": {
+        "body": "I want 2m red chiffon"
+      }
+    }
+  },
+  "whatsapp_webhook_meta": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "+254700000000",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "messages": [
+                {
+                  "from": "254700456789",
+                  "id": "wamid.XXX",
+                  "timestamp": "1704787200",
+                  "type": "text",
+                  "text": {
+                    "body": "I want 2m red chiffon"
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+  "mpesa_stk_callback_success": {
+    "Body": {
+      "stkCallback": {
+        "MerchantRequestID": "29115-34620561-1",
+        "CheckoutRequestID": "ws_CO_191220231020363123",
+        "ResultCode": 0,
+        "ResultDesc": "The service request is processed successfully.",
+        "CallbackMetadata": {
+          "Item": [
+            {
+              "Name": "Amount",
+              "Value": 100000
+            },
+            {
+              "Name": "MpesaReceiptNumber",
+              "Value": "QR3UQR4O"
+            },
+            {
+              "Name": "Balance"
+            },
+            {
+              "Name": "TransactionDate",
+              "Value": 20231219102036
+            },
+            {
+              "Name": "PhoneNumber",
+              "Value": 254700456789
+            }
+          ]
+        }
+      }
+    }
+  },
+  "mpesa_stk_callback_failed": {
+    "Body": {
+      "stkCallback": {
+        "MerchantRequestID": "29115-34620561-1",
+        "CheckoutRequestID": "ws_CO_191220231020363123",
+        "ResultCode": 1032,
+        "ResultDesc": "Request cancelled by user"
+      }
+    }
+  },
+  "classify_message_input": {
+    "phone": "+254700456789",
+    "message_text": "I want 2m red chiffon",
+    "message_type": "text",
+    "message_id": "wamid.XXX",
+    "timestamp": 1704787200
+  },
+  "send_whatsapp_input": {
+    "phone": "+254700456789",
+    "message": "Your order has been received!",
+    "message_type": "order_update",
+    "priority": "high",
+    "session_allowed": true,
+    "fallback_allowed": true
+  },
+  "send_sms_fallback_input": {
+    "phone": "+254700456789",
+    "message": "Your order has been received!",
+    "message_type": "transactional",
+    "reason": "whatsapp_timeout"
+  },
+  "reconcile_payment_input": {
+    "receipt_number": "QR3UQR4O",
+    "amount": 1000,
+    "phone": "+254700456789",
+    "timestamp": "2026-01-09T10:20:36Z"
+  },
+  "send_payment_confirmation_input": {
+    "trade_id": "TR20260109001",
+    "payment_id": "PAY20260109001"
+  },
+  "check_consent_input": {
+    "phone": "+254700456789",
+    "channel": "whatsapp",
+    "purpose": "marketing"
+  },
+  "log_message_input": {
+    "phone": "+254700456789",
+    "channel": "whatsapp",
+    "message_type": "order_update",
+    "status": "delivered",
+    "message_id": "wamid.XXX",
+    "cost_kes": 0.75
+  }
+}
+

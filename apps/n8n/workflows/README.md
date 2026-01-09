@@ -6,137 +6,136 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 
 **Architecture**: See [`docs/WAAS_ARCHITECTURE.md`](../../docs/WAAS_ARCHITECTURE.md) - n8n is Layer 2 (Orchestration).
 
+**Native Integrations**: See [`docs/NATIVE_INTEGRATIONS.md`](../../docs/NATIVE_INTEGRATIONS.md) - all workflows use native n8n nodes.
+
+---
+
+## Workflow Files
+
+### Version 1 (Original - Uses Custom Services)
+- `01_classify_message.json` - Message classification
+- `02_check_consent.json` - Consent validation
+- `03_send_whatsapp.json` - Send WhatsApp messages
+- `04_send_sms_fallback.json` - SMS fallback
+- `05_log_message.json` - Log messages
+- `06_reconcile_payment.json` - Payment reconciliation
+- `07_send_payment_confirmation.json` - Payment confirmation
+
+### Version 2 (Refactored - Uses Native Nodes) ✅ RECOMMENDED
+- `01_classify_message_v2.json` - Native HTTP Request → Supabase
+- `03_send_whatsapp_v2.json` - Native HTTP Request → WhatsApp API
+- `04_send_sms_fallback_v2.json` - Native HTTP Request → SMS API
+- `06_reconcile_payment_v2.json` - Native HTTP Request → Supabase + WhatsApp
+- `07_send_payment_confirmation_v2.json` - Native HTTP Request → WhatsApp + Supabase
+
+**Note**: Workflows 2 and 5 don't have v2 versions because they already use native nodes.
+
 ---
 
 ## Workflow Priority Order
 
-### ✅ Workflow 1: `01_classify_message`
-**Status**: ✅ Created  
+### ✅ Workflow 1: `01_classify_message_v2`
+**Status**: ✅ Created (v2)  
 **Purpose**: Classify incoming messages (first node in every workflow)  
 **Input**: WhatsApp webhook payload  
 **Output**: Message classification (type, channel, priority, fallback allowed)
 
-**Logic**:
-1. Extract message data (from, text, type, timestamp)
-2. Classify message type (order, payment_query, status_query, support, unknown)
-3. Check user type (query Supabase: buyer, seller, new_user)
-4. Check conversation window (24h from last message)
-5. Determine priority (high, medium, low)
-6. Determine fallback allowed (transactional → yes, marketing → no)
+**Key Features**:
+- Native HTTP Request nodes for Supabase queries
+- Business logic in Code node only
+- No custom service dependencies
 
 **Why First**: Every other workflow depends on classification.
 
 ---
 
 ### ✅ Workflow 2: `02_check_consent`
-**Status**: ✅ Created  
+**Status**: ✅ Created (already uses native nodes)  
 **Purpose**: Validate consent before sending marketing messages  
 **Input**: phone, channel, purpose  
 **Output**: consent_valid, consent_id
 
-**Logic**:
-1. Query Supabase consent table
-2. If consent found → valid
-3. If no consent:
-   - Transactional → implied consent (valid)
-   - Marketing → explicit consent required (invalid, log to daily_logs)
+**Key Features**:
+- Native HTTP Request → Supabase
+- Business logic for implied vs explicit consent
 
 **Why Second**: Protection - prevent Meta account blocks.
 
 ---
 
-### ⏳ Workflow 3: `03_send_whatsapp`
-**Status**: ⏳ Structure created (needs WhatsApp API credentials to activate)  
+### ✅ Workflow 3: `03_send_whatsapp_v2`
+**Status**: ✅ Created (v2)  
 **Purpose**: Send WhatsApp message (with retry + timeout logic)  
 **Input**: phone, message, message_type, priority  
 **Output**: delivery_status, message_id, cost
 
-**Logic**:
-1. Check conversation window (query Supabase)
-2. If within 24h → Use session message (free)
-3. If outside 24h → Use template (paid)
-4. If template required → Check consent
-5. Send via SMSLeopard/Meta API
-6. Wait for delivery receipt (timeout: 60 seconds)
-7. If delivered → Log to message_logs
-8. If failed → Trigger send_sms_fallback (if fallback_allowed)
+**Key Features**:
+- Native HTTP Request → WhatsApp API (SMSLeopard/Meta)
+- Session vs template routing with Switch node
+- Delivery receipt handling
+- Automatic fallback trigger
 
 **Why Third**: Core messaging logic. All other workflows use this.
 
-**Blocked By**: WhatsApp API credentials needed (human intervention)
-**File**: `03_send_whatsapp.json` (structure ready, activate after credentials)
-
 ---
 
-### ⏳ Workflow 4: `04_send_sms_fallback`
-**Status**: ⏳ Structure created (needs SMS provider API credentials to activate)  
+### ✅ Workflow 4: `04_send_sms_fallback_v2`
+**Status**: ✅ Created (v2)  
 **Purpose**: Fallback to SMS when WhatsApp fails  
 **Input**: phone, message, fallback_reason  
 **Output**: delivery_status, sms_provider_id
 
-**Logic**:
-1. Check message type (transactional → proceed, marketing → abort)
-2. Format SMS (160 chars max)
-3. Send via SMS provider (SMSLeopard/AfricasTalking)
-4. Log to message_logs (fallback_used=true)
+**Key Features**:
+- Native HTTP Request → SMS provider API
+- Message formatting logic in Code node
+- Automatic logging to Supabase
 
 **Why Fourth**: Critical for reliability. WhatsApp failures = lost transactions without this.
 
-**Blocked By**: SMS provider API credentials needed (human intervention)
-**File**: `04_send_sms_fallback.json` (structure ready, activate after credentials)
-
 ---
 
-### ⏳ Workflow 5: `05_log_message`
-**Status**: ⏳ Pending  
+### ✅ Workflow 5: `05_log_message`
+**Status**: ✅ Created (already uses native nodes)  
 **Purpose**: Log all messages to Supabase (audit trail)  
 **Input**: All message events (sent, delivered, failed, fallback)  
 **Output**: message_log_id
 
-**Logic**:
-1. Extract message data
-2. Insert into Supabase: message_logs table
-3. If status = 'failed' → Also log to daily_logs
-4. Calculate cost (WhatsApp template: 0.75 KSh, SMS: 1.00 KSh)
-5. Update cost tracking
+**Key Features**:
+- Native HTTP Request → Supabase
+- Automatic failure logging to daily_logs
 
 **Why Fifth**: Audit trail is non-negotiable. Banks, partners, regulators will ask.
 
 ---
 
-### ⏳ Workflow 6: `06_reconcile_payment`
-**Status**: ⏳ Pending  
+### ✅ Workflow 6: `06_reconcile_payment_v2`
+**Status**: ✅ Created (v2)  
 **Purpose**: Match M-Pesa payment to order (critical for trust)  
 **Input**: M-Pesa webhook payload  
 **Output**: payment_status, order_id (if matched)
 
-**Logic**:
-1. Extract: receipt_number, amount, phone, timestamp
-2. Query Supabase: Find orders by phone + amount (±50 KSh tolerance)
-3. If one match → Update order: payment_status='confirmed'
-4. If multiple matches → Log to daily_logs (manual review)
-5. If no match → Log to daily_logs (orphan payment)
+**Key Features**:
+- Native HTTP Request → Supabase for queries
+- Payment matching logic in Code node
+- Idempotency check (duplicate detection)
+- Auto-match vs manual review routing
 
 **Why Sixth**: Payment reconciliation is where startups die. Get this right early.
 
 ---
 
-### ⏳ Workflow 7: `07_send_payment_confirmation`
-**Status**: ⏳ Structure created (needs WhatsApp API credentials to activate)  
+### ✅ Workflow 7: `07_send_payment_confirmation_v2`
+**Status**: ✅ Created (v2)  
 **Purpose**: Notify buyer + seller when payment confirmed  
 **Input**: order_id, payment_id  
 **Output**: confirmation_sent (buyer + seller)
 
-**Logic**:
-1. Query Supabase: Get order details
-2. Send to buyer (template: 'payment_confirmation')
-3. Send to seller (template: 'payment_received')
-4. Log to message_logs
-5. Update order: payment_confirmed_at
+**Key Features**:
+- Native HTTP Request → WhatsApp API
+- Native HTTP Request → Supabase for logging
+- Parallel notifications (buyer + seller)
 
 **Why Seventh**: User trust depends on transparency. Always confirm payments.
-**Blocked By**: WhatsApp API credentials needed (workflow 3 dependency)
-**File**: `07_send_payment_confirmation.json` (structure ready, activate after credentials)
 
 ---
 
@@ -150,6 +149,44 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
    - Update webhook URLs
    - Test with sample data
 5. Activate workflow
+
+**Recommended**: Import v2 workflows (they use native nodes and are easier to maintain).
+
+---
+
+## Testing Workflows
+
+### Quick Test
+```bash
+# Test all workflows
+./scripts/test-all-workflows.sh
+
+# Test individual workflow
+node tests/n8n-workflow-tests.js
+
+# Test integration flows
+node tests/integration-test-suite.js
+```
+
+### Manual Test
+```bash
+# Test classify_message workflow
+curl -X POST http://localhost:5678/webhook/whatsapp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": {
+      "id": "test_001",
+      "from": "+254700456789",
+      "type": "text",
+      "timestamp": "1704787200",
+      "text": {
+        "body": "I want 2m red chiffon"
+      }
+    }
+  }'
+```
+
+See [`tests/test-payloads.json`](../../tests/test-payloads.json) for sample payloads.
 
 ---
 
@@ -167,6 +204,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 WHATSAPP_PROVIDER=smsleopard
 SMSLEOPARD_TOKEN=your_smsleopard_token
 PHONE_NUMBER_ID=your_phone_number_id
+WHATSAPP_ACCESS_TOKEN=your_whatsapp_access_token
 
 # SMS (for fallback)
 SMS_PROVIDER=smsleopard
@@ -179,41 +217,9 @@ DARAJA_CONSUMER_KEY=your_consumer_key
 DARAJA_CONSUMER_SECRET=your_consumer_secret
 MPESA_SHORTCODE=your_shortcode
 MPESA_PASSKEY=your_passkey
-```
 
----
-
-## Testing Workflows
-
-### Test classify_message
-
-```bash
-# Send test webhook
-curl -X POST http://localhost:5678/webhook/whatsapp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": {
-      "id": "test_001",
-      "from": "+254700456789",
-      "type": "text",
-      "timestamp": "1704787200",
-      "text": {
-        "body": "I want 2m red chiffon"
-      }
-    }
-  }'
-```
-
-### Test check_consent
-
-```bash
-# Trigger workflow with test data
-# In n8n: Use "Manual Trigger" node with:
-{
-  "phone": "+254700456789",
-  "channel": "whatsapp",
-  "purpose": "marketing"
-}
+# n8n
+N8N_BASE_URL=http://localhost:5678
 ```
 
 ---
@@ -221,34 +227,68 @@ curl -X POST http://localhost:5678/webhook/whatsapp \
 ## Workflow Dependencies
 
 ```
-classify_message (1)
+classify_message_v2 (1)
     ↓
-check_consent (2) ← Used by send_whatsapp
+check_consent (2) ← Used by send_whatsapp_v2
     ↓
-send_whatsapp (3) ← Used by all messaging workflows
+send_whatsapp_v2 (3) ← Used by all messaging workflows
     ↓
-send_sms_fallback (4) ← Triggered by send_whatsapp on failure
+send_sms_fallback_v2 (4) ← Triggered by send_whatsapp_v2 on failure
     ↓
 log_message (5) ← Used by all workflows
     ↓
-reconcile_payment (6) ← Triggered by M-Pesa webhook
+reconcile_payment_v2 (6) ← Triggered by M-Pesa webhook
     ↓
-send_payment_confirmation (7) ← Triggered by reconcile_payment
+send_payment_confirmation_v2 (7) ← Triggered by reconcile_payment_v2
 ```
+
+---
+
+## Migration from v1 to v2
+
+**Status**: v2 workflows ready, v1 workflows can be archived after testing.
+
+**Migration Steps**:
+1. Import v2 workflows into n8n
+2. Test v2 workflows with sample data
+3. Run in parallel with v1 (if needed)
+4. Cutover to v2 after validation
+5. Archive v1 workflows
+
+See [`docs/MIGRATION_CHECKLIST.md`](../../docs/MIGRATION_CHECKLIST.md) for detailed migration plan.
+
+---
+
+## Benefits of v2 Workflows
+
+**Before (v1 with custom services)**:
+- ❌ Custom service dependencies
+- ❌ More code to maintain
+- ❌ Harder to debug
+- ❌ Custom error handling
+
+**After (v2 with native nodes)**:
+- ✅ No custom service dependencies
+- ✅ Less code to maintain (~1,200 lines removed)
+- ✅ Easier to debug (n8n UI)
+- ✅ Built-in error handling and retry
+- ✅ Better credential management
+- ✅ Visual workflow debugging
 
 ---
 
 ## Next Steps
 
-1. **Import workflows 1-2** (classify_message, check_consent)
+1. **Import v2 workflows** into n8n
 2. **Configure environment variables** in n8n
-3. **Test workflows** with sample data
-4. **Build workflows 3-7** (requires API credentials - human intervention needed)
+3. **Test workflows** with sample data (see `tests/test-payloads.json`)
+4. **Run integration tests** (see `tests/integration-test-suite.js`)
+5. **Deploy to production** after validation
 
 **See [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) for detailed workflow logic.**
 
 ---
 
 **Last Updated**: 2026-01-09  
-**Status**: Workflows 1-2 created, workflows 3-7 pending API credentials
-
+**Status**: All 7 workflows created (v2 versions recommended)  
+**Next**: Test v2 workflows, then remove old services
