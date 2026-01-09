@@ -1,0 +1,369 @@
+{
+  "name": "21_health_daily_check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger (Daily 7 AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "notes": "Daily at 7 AM. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize health check results\nreturn [\n  { check_type: 'instagram_api', status: 'unknown', response_time_ms: null, error_message: null },\n  { check_type: 'whatsapp_api', status: 'unknown', response_time_ms: null, error_message: null },\n  { check_type: 'mpesa_api', status: 'unknown', response_time_ms: null, error_message: null },\n  { check_type: 'database', status: 'unknown', response_time_ms: null, error_message: null },\n  { check_type: 'workflow', status: 'unknown', response_time_ms: null, error_message: null }\n];"
+      },
+      "id": "init-checks",
+      "name": "Initialize Health Checks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "notes": "Initialize health check results array"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://graph.instagram.com/me?fields=id,username&access_token={{$env.INSTAGRAM_ACCESS_TOKEN}}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "check-instagram",
+      "name": "Check Instagram API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 200],
+      "notes": "Check Instagram token validity. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 3"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://graph.facebook.com/v18.0/me?access_token={{$env.WHATSAPP_ACCESS_TOKEN}}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "check-whatsapp",
+      "name": "Check WhatsApp API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300],
+      "notes": "Check WhatsApp Business API status"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{Buffer.from($env.MPESA_CONSUMER_KEY + ':' + $env.MPESA_CONSUMER_SECRET).toString('base64')}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "check-mpesa",
+      "name": "Check M-Pesa API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 400],
+      "notes": "Check M-Pesa Daraja OAuth connectivity"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/?select=version",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "check-database",
+      "name": "Check Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 500],
+      "notes": "Check Supabase database connection"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders?select=id&limit=1&created_at=gte.{{new Date(Date.now() - 24*60*60*1000).toISOString()}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "check-workflow",
+      "name": "Check Workflow Execution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 600],
+      "notes": "Check workflow execution rates (orders created in last 24h)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process health check results\nconst checks = [];\nconst startTime = Date.now();\n\n// Process Instagram check\nconst instagramResult = $('Check Instagram API').first()?.json || {};\nconst instagramTime = Date.now() - startTime;\nchecks.push({\n  check_type: 'instagram_api',\n  status: instagramResult.id ? 'healthy' : 'down',\n  response_time_ms: instagramTime,\n  error_message: instagramResult.error ? JSON.stringify(instagramResult.error) : null,\n  metadata: { user_id: instagramResult.id, username: instagramResult.username }\n});\n\n// Process WhatsApp check\nconst whatsappResult = $('Check WhatsApp API').first()?.json || {};\nconst whatsappTime = Date.now() - startTime;\nchecks.push({\n  check_type: 'whatsapp_api',\n  status: whatsappResult.id ? 'healthy' : 'down',\n  response_time_ms: whatsappTime,\n  error_message: whatsappResult.error ? JSON.stringify(whatsappResult.error) : null,\n  metadata: { page_id: whatsappResult.id }\n});\n\n// Process M-Pesa check\nconst mpesaResult = $('Check M-Pesa API').first()?.json || {};\nconst mpesaTime = Date.now() - startTime;\nchecks.push({\n  check_type: 'mpesa_api',\n  status: mpesaResult.access_token ? 'healthy' : 'down',\n  response_time_ms: mpesaTime,\n  error_message: mpesaResult.error ? JSON.stringify(mpesaResult.error) : null,\n  metadata: { token_type: mpesaResult.token_type }\n});\n\n// Process Database check\nconst dbResult = $('Check Database').first()?.json || {};\nconst dbTime = Date.now() - startTime;\nchecks.push({\n  check_type: 'database',\n  status: dbResult.version ? 'healthy' : 'down',\n  response_time_ms: dbTime,\n  error_message: dbResult.error ? JSON.stringify(dbResult.error) : null,\n  metadata: { version: dbResult.version }\n});\n\n// Process Workflow check\nconst workflowResult = $('Check Workflow Execution').first()?.json || [];\nconst workflowTime = Date.now() - startTime;\nchecks.push({\n  check_type: 'workflow',\n  status: Array.isArray(workflowResult) ? 'healthy' : 'degraded',\n  response_time_ms: workflowTime,\n  error_message: null,\n  metadata: { orders_last_24h: workflowResult.length }\n});\n\nreturn checks;"
+      },
+      "id": "process-results",
+      "name": "Process Health Check Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "notes": "Process all health check results and determine status"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/health_check_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
+      },
+      "id": "log-results",
+      "name": "Log Health Check Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "notes": "Log all health check results to health_check_logs table"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check for failures and create support cases\nconst checks = $input.all();\nconst failures = checks.filter(c => c.status === 'down' || c.status === 'degraded');\n\nif (failures.length > 0) {\n  return failures.map(failure => ({\n    check_type: failure.check_type,\n    status: failure.status,\n    error_message: failure.error_message,\n    should_alert: true,\n    alert_message: `⚠️ Health Check Failed: ${failure.check_type} is ${failure.status}. ${failure.error_message || 'No details available'}`\n  }));\n}\n\nreturn [{ should_alert: false, message: 'All systems healthy' }];"
+      },
+      "id": "check-failures",
+      "name": "Check for Failures",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "notes": "Identify failed health checks and prepare alerts"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-failures",
+              "leftValue": "={{$json.should_alert}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-failures",
+      "name": "If Failures Detected",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "notes": "Route to alerting if failures detected"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/support_cases",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"case_type\": \"technical_issue\",\n  \"priority\": \"{{$json.status === 'down' ? 'critical' : 'high'}}\",\n  \"status\": \"open\",\n  \"automated\": true,\n  \"description\": \"{{$json.alert_message}}\",\n  \"assigned_to\": \"system\"\n}",
+        "options": {}
+      },
+      "id": "create-support-case",
+      "name": "Create Support Case",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200],
+      "notes": "Create support case for failed health checks"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "send-alert",
+      "name": "Send WhatsApp Alert",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1850, 200],
+      "notes": "Send WhatsApp alert to system admin. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summary\nconst allChecks = $('Process Health Check Results').all();\nconst healthy = allChecks.filter(c => c.status === 'healthy').length;\nconst total = allChecks.length;\n\nreturn {\n  total_checks: total,\n  healthy: healthy,\n  degraded: allChecks.filter(c => c.status === 'degraded').length,\n  down: allChecks.filter(c => c.status === 'down').length,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 400],
+      "notes": "Generate health check summary"
+    }
+  ],
+  "connections": {
+    "Cron Trigger (Daily 7 AM)": {
+      "main": [[{"node": "Initialize Health Checks", "type": "main", "index": 0}]]
+    },
+    "Initialize Health Checks": {
+      "main": [
+        [{"node": "Check Instagram API", "type": "main", "index": 0}],
+        [{"node": "Check WhatsApp API", "type": "main", "index": 0}],
+        [{"node": "Check M-Pesa API", "type": "main", "index": 0}],
+        [{"node": "Check Database", "type": "main", "index": 0}],
+        [{"node": "Check Workflow Execution", "type": "main", "index": 0}]
+      ]
+    },
+    "Check Instagram API": {
+      "main": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]]
+    },
+    "Check WhatsApp API": {
+      "main": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]]
+    },
+    "Check M-Pesa API": {
+      "main": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]]
+    },
+    "Check Database": {
+      "main": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]]
+    },
+    "Check Workflow Execution": {
+      "main": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Process Health Check Results", "type": "main", "index": 0}]]
+    },
+    "Process Health Check Results": {
+      "main": [[{"node": "Log Health Check Results", "type": "main", "index": 0}]]
+    },
+    "Log Health Check Results": {
+      "main": [[{"node": "Check for Failures", "type": "main", "index": 0}]]
+    },
+    "Check for Failures": {
+      "main": [[{"node": "If Failures Detected", "type": "main", "index": 0}]]
+    },
+    "If Failures Detected": {
+      "main": [
+        [{"node": "Create Support Case", "type": "main", "index": 0}],
+        [{"node": "Generate Summary", "type": "main", "index": 0}]
+      ]
+    },
+    "Create Support Case": {
+      "main": [[{"node": "Send WhatsApp Alert", "type": "main", "index": 0}]]
+    },
+    "Send WhatsApp Alert": {
+      "main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Health Daily Check: System health monitoring (Instagram, WhatsApp, M-Pesa, Database, Workflows). Daily at 7 AM. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 3"
+}
+

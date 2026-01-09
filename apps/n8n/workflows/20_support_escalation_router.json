@@ -1,0 +1,265 @@
+{
+  "name": "20_support_escalation_router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-escalation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Support Escalation Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "support-escalation-router",
+      "notes": "Triggered by workflows with confidence <80%. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "tenant_id",
+              "name": "tenant_id",
+              "value": "={{$json.body?.tenant_id || $json.query?.tenant_id || $json.params?.tenant_id}}",
+              "type": "string"
+            },
+            {
+              "id": "confidence",
+              "name": "confidence",
+              "value": "={{$json.body?.confidence || $json.query?.confidence || 0}}",
+              "type": "number"
+            },
+            {
+              "id": "item_type",
+              "name": "item_type",
+              "value": "={{$json.body?.item_type || $json.query?.item_type || 'order'}}",
+              "type": "string"
+            },
+            {
+              "id": "item_id",
+              "name": "item_id",
+              "value": "={{$json.body?.item_id || $json.query?.item_id}}",
+              "type": "string"
+            },
+            {
+              "id": "context",
+              "name": "context",
+              "value": "={{$json.body?.context || $json.query?.context || {}}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-params",
+      "name": "Extract Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Extract tenant_id, confidence, item_type, item_id, and context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "low-confidence",
+              "leftValue": "={{$json.confidence}}",
+              "rightValue": 0.8,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-confidence",
+      "name": "Check Confidence <80%",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Only escalate if confidence < 80%"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_LOOKUP_TENANT || '00_lookup_tenant_config'}}",
+        "options": {}
+      },
+      "id": "lookup-tenant",
+      "name": "Lookup Tenant UUID",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "notes": "Resolve tenant_id to UUID"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract UUID tenant_id and prepare context\nconst lookupResult = $input.item.json;\nconst params = $('Extract Parameters').first().json;\n\nif (!lookupResult.tenant_id) {\n  return {\n    valid: false,\n    error: 'Tenant lookup failed',\n    statusCode: 404\n  };\n}\n\n// Get item details based on type\nlet itemDetails = {};\nif (params.item_type === 'order' && params.item_id) {\n  itemDetails = { order_id: params.item_id };\n} else if (params.item_type === 'payment' && params.item_id) {\n  itemDetails = { payment_id: params.item_id };\n}\n\nreturn {\n  tenant_id: lookupResult.tenant_id,  // UUID\n  tenant_id_input: params.tenant_id,\n  confidence: params.confidence,\n  item_type: params.item_type,\n  item_id: params.item_id,\n  context: params.context,\n  item_details: itemDetails,\n  tenant_config: lookupResult\n};"
+      },
+      "id": "prepare-context",
+      "name": "Prepare Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200],
+      "notes": "Prepare escalation context with tenant UUID and item details"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/support_cases",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"case_type\": \"technical_issue\",\n  \"priority\": \"high\",\n  \"status\": \"open\",\n  \"automated\": false,\n  \"description\": \"Low confidence automation ({{Math.round($json.confidence * 100)}}%): {{$json.item_type}} #{{$json.item_id?.substring(0, 8) || 'unknown'}}. Context: {{JSON.stringify($json.context)}}\",\n  \"assigned_to\": null\n}",
+        "options": {}
+      },
+      "id": "create-support-case",
+      "name": "Create Support Case",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 200],
+      "notes": "Create support case for human review. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenant_config?tenant_id=eq.{{$json.tenant_id}}&select=owner_phone",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-owner-phone",
+      "name": "Get Owner Phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200],
+      "notes": "Get owner phone for notification"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "notify-agent",
+      "name": "Notify Agent via WhatsApp",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1650, 200],
+      "notes": "Notify human agent with full context. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { status: 'success', message: 'Support case created and agent notified', case_id: $('Create Support Case').first().json.id } }}",
+        "options": {}
+      },
+      "id": "return-success",
+      "name": "Return Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 200],
+      "notes": "Return success response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { status: 'skipped', message: 'Confidence >= 80%, no escalation needed' } }}",
+        "options": {}
+      },
+      "id": "return-skipped",
+      "name": "Return Skipped",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 400],
+      "notes": "Return skipped response if confidence >= 80%"
+    }
+  ],
+  "connections": {
+    "Support Escalation Trigger": {
+      "main": [[{"node": "Extract Parameters", "type": "main", "index": 0}]]
+    },
+    "Extract Parameters": {
+      "main": [[{"node": "Check Confidence <80%", "type": "main", "index": 0}]]
+    },
+    "Check Confidence <80%": {
+      "main": [
+        [{"node": "Lookup Tenant UUID", "type": "main", "index": 0}],
+        [{"node": "Return Skipped", "type": "main", "index": 0}]
+      ]
+    },
+    "Lookup Tenant UUID": {
+      "main": [[{"node": "Prepare Context", "type": "main", "index": 0}]]
+    },
+    "Prepare Context": {
+      "main": [[{"node": "Create Support Case", "type": "main", "index": 0}]]
+    },
+    "Create Support Case": {
+      "main": [[{"node": "Get Owner Phone", "type": "main", "index": 0}]]
+    },
+    "Get Owner Phone": {
+      "main": [[{"node": "Notify Agent via WhatsApp", "type": "main", "index": 0}]]
+    },
+    "Notify Agent via WhatsApp": {
+      "main": [[{"node": "Return Success", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Support Escalation Router: Route low-confidence automation (<80%) to human agents, track SLA. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+}
+

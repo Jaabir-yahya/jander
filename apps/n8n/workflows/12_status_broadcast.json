@@ -1,0 +1,212 @@
+{
+  "name": "12_status_broadcast",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Daily Broadcast Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.2,
+      "position": [250, 300],
+      "notes": "Runs daily. Reference: TechWaba pattern - Brazil spaza owners use Status updates"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenants?is_active=eq.true&select=id,name,whatsapp_number",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-tenants",
+      "name": "Get Active Tenants",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "splitInBatches",
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-tenants",
+      "name": "Split Tenants",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_LOOKUP_TENANT || '00_lookup_tenant_config'}}",
+        "options": {}
+      },
+      "id": "lookup-tenant",
+      "name": "Lookup Tenant Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/messages?tenant_id=eq.{{$json.id}}&direction=eq.inbound&intent=eq.order&select=customer_phone&order=created_at.desc&limit=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-customers",
+      "name": "Get Recent Customers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "notes": "Get customers who ordered in last 30 days (for broadcast list)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// TechWaba Pattern: Format status update message\n// Reference: docs/core/verified-research-findings.md - Brazil spaza Status updates\n\nconst customers = $input.item.json || [];\nconst tenant = $('Lookup Tenant Config').first().json;\n\n// Get unique customer phones\nconst uniquePhones = [...new Set(customers.map(c => c.customer_phone))];\n\n// Format status message (TechWaba pattern)\nconst statusMessage = `🛍️ Fresh stock available!\n\nDaily specials:\n• Maize: KSh 45/kg\n• Sugar: KSh 120/kg\n• Rice: KSh 150/kg\n\nReply ORDER to place your order.`;\n\nreturn uniquePhones.map(phone => ({\n  tenant_id: tenant.tenant_id,\n  customer_phone: phone,\n  message: statusMessage,\n  broadcast_type: 'status_update'\n}));"
+      },
+      "id": "format-broadcast",
+      "name": "Format Status Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "notes": "TechWaba pattern: 'Fresh stock! Reply ORDER' format"
+    },
+    {
+      "parameters": {
+        "mode": "splitInBatches",
+        "batchSize": 10,
+        "options": {}
+      },
+      "id": "split-broadcast",
+      "name": "Split Broadcast List",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1450, 300],
+      "notes": "Batch send (10 at a time) to respect WhatsApp rate limits"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_SEND_WHATSAPP || '03_send_whatsapp_v2'}}",
+        "options": {}
+      },
+      "id": "send-broadcast",
+      "name": "Send Broadcast Message",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "notes": "Send status update via WhatsApp (TechWaba pattern)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"customer_phone\": \"{{$json.customer_phone}}\",\n  \"direction\": \"outbound\",\n  \"message_type\": \"text\",\n  \"content\": \"{{$json.message}}\",\n  \"intent\": \"broadcast\"\n}",
+        "options": {}
+      },
+      "id": "log-broadcast",
+      "name": "Log Broadcast Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "Daily Broadcast Trigger": {
+      "main": [[{"node": "Get Active Tenants", "type": "main", "index": 0}]]
+    },
+    "Get Active Tenants": {
+      "main": [[{"node": "Split Tenants", "type": "main", "index": 0}]]
+    },
+    "Split Tenants": {
+      "main": [[{"node": "Lookup Tenant Config", "type": "main", "index": 0}]]
+    },
+    "Lookup Tenant Config": {
+      "main": [[{"node": "Get Recent Customers", "type": "main", "index": 0}]]
+    },
+    "Get Recent Customers": {
+      "main": [[{"node": "Format Status Message", "type": "main", "index": 0}]]
+    },
+    "Format Status Message": {
+      "main": [[{"node": "Split Broadcast List", "type": "main", "index": 0}]]
+    },
+    "Split Broadcast List": {
+      "main": [[{"node": "Send Broadcast Message", "type": "main", "index": 0}]]
+    },
+    "Send Broadcast Message": {
+      "main": [[{"node": "Log Broadcast Message", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "✅ TechWaba Pattern: Daily status updates via WhatsApp broadcast. Gets recent customers → Formats status message → Sends batch broadcast. Reference: docs/core/verified-research-findings.md - Brazil spaza owners use Status updates (free, effective)"
+}
+

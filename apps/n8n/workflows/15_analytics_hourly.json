@@ -1,0 +1,260 @@
+{
+  "name": "15_analytics_hourly",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger (Every Hour)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "notes": "Every hour. Reference: docs/core/DATA_INTELLIGENCE_SYSTEM.md Section 12.1"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenants?select=id",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Range",
+              "value": "0-999"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-tenants",
+      "name": "Get All Tenants",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "notes": "Get all active tenants for hourly analytics calculation"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process each tenant for hourly analytics\nconst tenants = Array.isArray($input.all()) ? $input.all() : [$input.item.json];\nconst oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();\nconst now = new Date().toISOString();\n\nreturn tenants.map(tenant => ({\n  tenant_id: tenant.id,\n  start_time: oneHourAgo,\n  end_time: now,\n  hour: new Date().getHours()\n}));"
+      },
+      "id": "prepare-tenant-data",
+      "name": "Prepare Tenant Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Prepare time range for each tenant's hourly analytics"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders?tenant_id=eq.{{$json.tenant_id}}&created_at=gte.{{$json.start_time}}&created_at=lt.{{$json.end_time}}&select=id,total_amount,payment_status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Range",
+              "value": "0-999"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-hourly-orders",
+      "name": "Get Hourly Orders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Get orders from last hour for this tenant"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/leads?tenant_id=eq.{{$json.tenant_id}}&created_at=gte.{{$json.start_time}}&created_at=lt.{{$json.end_time}}&select=id",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Range",
+              "value": "0-999"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-hourly-leads",
+      "name": "Get Hourly Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 400],
+      "notes": "Get leads from last hour for this tenant"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/payments?tenant_id=eq.{{$json.tenant_id}}&created_at=gte.{{$json.start_time}}&created_at=lt.{{$json.end_time}}&select=id,m_pesa_amount",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Range",
+              "value": "0-999"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-hourly-payments",
+      "name": "Get Hourly Payments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 500],
+      "notes": "Get payments from last hour for this tenant"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate hourly metrics\nconst tenantData = $('Prepare Tenant Data').first().json;\nconst orders = $('Get Hourly Orders').first()?.json || [];\nconst leads = $('Get Hourly Leads').first()?.json || [];\nconst payments = $('Get Hourly Payments').first()?.json || [];\n\nconst orderCount = orders.length;\nconst paidOrders = orders.filter(o => o.payment_status === 'paid');\nconst revenue = paidOrders.reduce((sum, o) => sum + parseFloat(o.total_amount || 0), 0);\nconst leadCount = leads.length;\nconst paymentCount = payments.length;\nconst paymentAmount = payments.reduce((sum, p) => sum + parseFloat(p.m_pesa_amount || 0), 0);\nconst conversionRate = leadCount > 0 ? (orderCount / leadCount * 100).toFixed(2) : 0;\n\nreturn {\n  tenant_id: tenantData.tenant_id,\n  hour: tenantData.hour,\n  timestamp: new Date().toISOString(),\n  metrics: {\n    order_count: orderCount,\n    paid_order_count: paidOrders.length,\n    revenue: revenue,\n    lead_count: leadCount,\n    payment_count: paymentCount,\n    payment_amount: paymentAmount,\n    conversion_rate: parseFloat(conversionRate)\n  }\n};"
+      },
+      "id": "aggregate-metrics",
+      "name": "Aggregate Hourly Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400],
+      "notes": "Calculate hourly aggregated metrics for dashboard"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/refresh_analytics_cache",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
+      },
+      "id": "update-cache",
+      "name": "Update Analytics Cache",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400],
+      "notes": "Update analytics cache table (if exists) or store in temporary table for dashboard"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summary of hourly processing\nconst allTenants = $input.all();\nconst totalRevenue = allTenants.reduce((sum, t) => sum + (t.metrics?.revenue || 0), 0);\nconst totalOrders = allTenants.reduce((sum, t) => sum + (t.metrics?.order_count || 0), 0);\n\nreturn {\n  processed_tenants: allTenants.length,\n  total_revenue: totalRevenue,\n  total_orders: totalOrders,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 400],
+      "notes": "Generate summary of hourly analytics processing"
+    }
+  ],
+  "connections": {
+    "Cron Trigger (Every Hour)": {
+      "main": [[{"node": "Get All Tenants", "type": "main", "index": 0}]]
+    },
+    "Get All Tenants": {
+      "main": [[{"node": "Prepare Tenant Data", "type": "main", "index": 0}]]
+    },
+    "Prepare Tenant Data": {
+      "main": [
+        [{"node": "Get Hourly Orders", "type": "main", "index": 0}],
+        [{"node": "Get Hourly Leads", "type": "main", "index": 0}],
+        [{"node": "Get Hourly Payments", "type": "main", "index": 0}]
+      ]
+    },
+    "Get Hourly Orders": {
+      "main": [[{"node": "Aggregate Hourly Metrics", "type": "main", "index": 0}]]
+    },
+    "Get Hourly Leads": {
+      "main": [[{"node": "Aggregate Hourly Metrics", "type": "main", "index": 0}]]
+    },
+    "Get Hourly Payments": {
+      "main": [[{"node": "Aggregate Hourly Metrics", "type": "main", "index": 0}]]
+    },
+    "Aggregate Hourly Metrics": {
+      "main": [[{"node": "Update Analytics Cache", "type": "main", "index": 0}]]
+    },
+    "Update Analytics Cache": {
+      "main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Analytics Hourly: Pre-calculate hourly metrics for fast dashboard loading. Every hour. Reference: docs/core/DATA_INTELLIGENCE_SYSTEM.md Section 12.1"
+}
+

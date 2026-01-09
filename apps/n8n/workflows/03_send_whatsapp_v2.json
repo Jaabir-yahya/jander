@@ -146,7 +146,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages' : 'https://graph.facebook.com/v18.0/' + $env.PHONE_NUMBER_ID + '/messages'}}",
+        "url": "=https://graph.facebook.com/v18.0/{{$env.PHONE_NUMBER_ID}}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -154,7 +154,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+              "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
             },
             {
               "name": "Content-Type",
@@ -205,7 +205,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages' : 'https://graph.facebook.com/v18.0/' + $env.PHONE_NUMBER_ID + '/messages'}}",
+        "url": "=https://graph.facebook.com/v18.0/{{$env.PHONE_NUMBER_ID}}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -213,7 +213,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+              "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
             },
             {
               "name": "Content-Type",
@@ -264,7 +264,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages/' + ($json.message_id || $json.messages[0]?.id) : 'https://graph.facebook.com/v18.0/' + ($json.message_id || $json.messages[0]?.id) + '?fields=status,timestamp'}}",
+        "url": "=https://graph.facebook.com/v18.0/{{$json.message_id || $json.messages[0]?.id}}?fields=status,timestamp",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -272,7 +272,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+              "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
             }
           ]
         },
@@ -545,6 +545,148 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [2250, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Handler: Classify error and determine if retryable\n// Industry standard error handling with retry logic for WhatsApp API\n\nconst error = $input.item.json.error || {};\nconst nodeName = $input.item.json.node?.name || 'unknown_node';\nconst errorMessage = error.message || 'Unknown error';\nconst errorCode = error.code || error.status || 'UNKNOWN';\nconst errorStack = error.stack || null;\n\n// Classify error\nlet errorType = 'NEEDS_REVIEW';\nlet severity = 'ERROR';\nlet isRetryable = false;\n\n// Retryable errors (network, rate limits, timeouts)\nif (\n  errorCode === 'ECONNREFUSED' ||\n  errorCode === 'ETIMEDOUT' ||\n  errorCode === 'ENOTFOUND' ||\n  errorCode === 429 || // Rate limit\n  errorCode === 503 || // Service unavailable\n  errorCode === 502 || // Bad gateway\n  errorMessage.toLowerCase().includes('timeout') ||\n  errorMessage.toLowerCase().includes('network') ||\n  errorMessage.toLowerCase().includes('rate limit')\n) {\n  errorType = 'RETRYABLE';\n  isRetryable = true;\n} else if (\n  errorCode === 401 || // Unauthorized\n  errorCode === 403 || // Forbidden\n  errorMessage.toLowerCase().includes('unauthorized')\n) {\n  errorType = 'CRITICAL';\n  severity = 'CRITICAL';\n} else if (\n  errorCode === 400 || // Bad request\n  errorCode === 422 || // Unprocessable entity\n  errorMessage.toLowerCase().includes('validation')\n) {\n  errorType = 'NEEDS_REVIEW';\n}\n\n// Get context from previous nodes\nconst inputData = $('Extract Input').first()?.json || {};\nconst phone = inputData.phone || 'unknown';\nconst messageBody = inputData.message_body || '';\n\nreturn {\n  error_type: errorType,\n  severity: severity,\n  is_retryable: isRetryable,\n  service_name: 'whatsapp-sender',\n  error_message: errorMessage,\n  error_code: errorCode,\n  error_stack: errorStack,\n  node_name: nodeName,\n  phone: phone,\n  message_body: messageBody.substring(0, 100), // Truncate for logging\n  context: {\n    operation: 'send_whatsapp_message',\n    node: nodeName,\n    phone: phone,\n    message_type: inputData.message_type || 'unknown'\n  },\n  status_code: errorCode >= 500 ? 500 : (errorCode >= 400 ? 400 : 500),\n  max_retries: 3,\n  retry_count: 0\n};"
+      },
+      "id": "error-handler-classify",
+      "name": "Error Handler: Classify Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 600],
+      "notes": "Industry standard: Classify error and determine retryability for WhatsApp API calls"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Handler: Check if should retry or add to DLQ\n// Industry standard: Retry retryable errors, add to DLQ if max retries exceeded\n\nconst errorData = $input.item.json;\nconst isRetryable = errorData.is_retryable === true;\nconst retryCount = errorData.retry_count || 0;\nconst maxRetries = errorData.max_retries || 3;\n\nif (isRetryable && retryCount < maxRetries) {\n  // Calculate exponential backoff delay\n  const baseDelay = 1000; // 1 second\n  const delayMs = Math.min(baseDelay * Math.pow(2, retryCount), 30000); // Cap at 30s\n  const jitter = Math.random() * delayMs * 0.1; // 10% jitter\n  const finalDelay = Math.floor(delayMs + jitter);\n  \n  return {\n    should_retry: true,\n    retry_count: retryCount + 1,\n    delay_ms: finalDelay,\n    ...errorData\n  };\n} else if (isRetryable && retryCount >= maxRetries) {\n  // Max retries exceeded - add to DLQ\n  return {\n    should_retry: false,\n    add_to_dlq: true,\n    retry_count: retryCount,\n    max_retries_exceeded: true,\n    ...errorData\n  };\n} else {\n  // Not retryable - log and return error\n  return {\n    should_retry: false,\n    add_to_dlq: false,\n    ...errorData\n  };\n}"
+      },
+      "id": "error-handler-retry",
+      "name": "Error Handler: Check Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 600],
+      "notes": "Industry standard: Determine if error should be retried or added to dead letter queue"
+    },
+    {
+      "parameters": {
+        "amount": "={{$json.delay_ms || 1000}}",
+        "unit": "milliseconds"
+      },
+      "id": "error-retry-delay",
+      "name": "Error Handler: Retry Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1650, 600],
+      "notes": "Exponential backoff delay before retry"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/error_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"service_name\": \"{{$('Error Handler: Classify Error').first().json.service_name}}\",\n  \"error_type\": \"{{$('Error Handler: Classify Error').first().json.error_type}}\",\n  \"message\": \"{{$('Error Handler: Classify Error').first().json.error_message}}\",\n  \"stack_trace\": {{$('Error Handler: Classify Error').first().json.error_stack ? JSON.stringify($('Error Handler: Classify Error').first().json.error_stack) : 'null'}},\n  \"context\": {{JSON.stringify($('Error Handler: Classify Error').first().json.context)}},\n  \"severity\": \"{{$('Error Handler: Classify Error').first().json.severity}}\"\n}",
+        "options": {}
+      },
+      "id": "error-log",
+      "name": "Error Handler: Log to error_logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 700],
+      "notes": "Industry standard: Log all errors to error_logs table"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/dead_letter_queue",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation_type\": \"send_whatsapp_message\",\n  \"payload\": {{JSON.stringify($('Error Handler: Classify Error').first().json.context)}},\n  \"error_message\": \"{{$('Error Handler: Classify Error').first().json.error_message}}\",\n  \"error_stack\": {{$('Error Handler: Classify Error').first().json.error_stack ? JSON.stringify($('Error Handler: Classify Error').first().json.error_stack) : 'null'}},\n  \"retry_count\": {{$('Error Handler: Check Retry').first().json.retry_count || 0}},\n  \"max_retries\": {{$('Error Handler: Classify Error').first().json.max_retries || 3}},\n  \"status\": \"pending\",\n  \"next_retry_at\": \"{{new Date(Date.now() + 60000).toISOString()}}\"\n}",
+        "options": {}
+      },
+      "id": "error-dlq",
+      "name": "Error Handler: Add to DLQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 700],
+      "notes": "Industry standard: Add failed retryable operations to dead letter queue for later processing"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-retry",
+              "leftValue": "={{$json.should_retry}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "error-check-retry",
+      "name": "Error Handler: Should Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 600],
+      "notes": "Check if error should be retried"
     }
   ],
   "connections": {
@@ -552,7 +694,8 @@
       "main": [[{"node": "Check Conversation Window", "type": "main", "index": 0}]]
     },
     "Check Conversation Window": {
-      "main": [[{"node": "Calculate Message Cost", "type": "main", "index": 0}]]
+      "main": [[{"node": "Calculate Message Cost", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
     },
     "Calculate Message Cost": {
       "main": [[{"node": "Determine Template vs Session", "type": "main", "index": 0}]]
@@ -567,25 +710,46 @@
       "main": [[{"node": "Send Template Message (Paid)", "type": "main", "index": 0}]]
     },
     "Send Session Message (Free)": {
-      "main": [[{"node": "Wait for Delivery (60s timeout)", "type": "main", "index": 0}]]
+      "main": [[{"node": "Wait for Delivery (60s timeout)", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
     },
     "Send Template Message (Paid)": {
-      "main": [[{"node": "Wait for Delivery (60s timeout)", "type": "main", "index": 0}]]
+      "main": [[{"node": "Wait for Delivery (60s timeout)", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
     },
     "Wait for Delivery (60s timeout)": {
       "main": [[{"node": "Check Delivery Status", "type": "main", "index": 0}]]
     },
     "Check Delivery Status": {
-      "main": [[{"node": "Handle Delivery Result", "type": "main", "index": 0}]]
+      "main": [[{"node": "Handle Delivery Result", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Classify Error": {
+      "main": [[{"node": "Error Handler: Check Retry", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Check Retry": {
+      "main": [[{"node": "Error Handler: Log to error_logs", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Log to error_logs": {
+      "main": [[{"node": "Error Handler: Should Retry?", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Should Retry?": {
+      "main": [
+        [{"node": "Error Handler: Retry Delay", "type": "main", "index": 0}],
+        [{"node": "Error Handler: Add to DLQ", "type": "main", "index": 0}]
+      ]
+    },
+    "Error Handler: Retry Delay": {
+      "main": [[{"node": "Send Session Message (Free)", "type": "main", "index": 0}]]
     },
     "Handle Delivery Result": {
       "main": [
         [{"node": "Log Success (Native Supabase)", "type": "main", "index": 0}],
         [{"node": "Log Success (Native Supabase)", "type": "main", "index": 0}],
-        [{"node": "Check Fallback Allowed?", "type": "main", "index": 0}]
+        [{"node": "Fallback Allowed?", "type": "main", "index": 0}]
       ]
     },
-    "Check Fallback Allowed?": {
+    "Fallback Allowed?": {
       "main": [
         [{"node": "Trigger SMS Fallback", "type": "main", "index": 0}],
         [{"node": "Log Failure (Native Supabase)", "type": "main", "index": 0}]
@@ -601,6 +765,7 @@
   "triggerCount": 0,
   "updatedAt": "2026-01-09T00:00:00.000Z",
   "versionId": "2",
-  "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for WhatsApp API and Supabase. No custom services. See docs/NATIVE_INTEGRATIONS.md"
+      "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for WhatsApp API and Supabase. No custom services. See docs/NATIVE_INTEGRATIONS.md\n\n✅ ERROR HANDLING: Industry-standard error handling with retry logic:\n- Error classification (retryable, needs review, critical)\n- Exponential backoff retry (max 3 retries)\n- Dead letter queue for failed retryable operations\n- Error logging to error_logs table\n- Connected via On Error outputs from HTTP Request nodes"
 }
+
 

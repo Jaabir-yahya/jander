@@ -15,6 +15,7 @@ docs/
 │   ├── PROJECT_MASTER.md     # Complete project context
 │   ├── BUILD_PLAN.md          # Execution plan (Weeks 1-12)
 │   ├── ARCHITECTURE.md        # System design
+│   ├── ARCHITECTURE_PRINCIPLES.md  # ⭐ Non-negotiables vs flexible areas (decision framework)
 │   └── WORKFLOWS.md           # Business processes
 ├── architecture/              # Architecture details
 │   ├── WAAS_ARCHITECTURE.md
@@ -49,6 +50,7 @@ docs/
 - [PROJECT_MASTER.md](./core/PROJECT_MASTER.md) - Complete context
 - [BUILD_PLAN.md](./core/BUILD_PLAN.md) - Execution roadmap
 - [ARCHITECTURE.md](./core/ARCHITECTURE.md) - System design
+- [ARCHITECTURE_PRINCIPLES.md](./core/ARCHITECTURE_PRINCIPLES.md) - ⭐ Non-negotiables vs flexible areas (decision framework)
 - [WORKFLOWS.md](./core/WORKFLOWS.md) - Business processes
 
 **Reference:**

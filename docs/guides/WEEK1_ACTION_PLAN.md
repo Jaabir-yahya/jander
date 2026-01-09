@@ -29,9 +29,17 @@ This is your complete step-by-step guide for Week 1 deployment. Follow this in o
 8. Paste and execute
 9. Copy contents of `apps/supabase/migrations/003_add_tenant_config.sql`
 10. Paste and execute
-11. Verify tables created: `buyers`, `sellers`, `trades`, `tenant_config`, etc.
+11. Copy contents of `apps/supabase/migrations/004_migrate_to_research_schema.sql`
+12. Paste and execute
+13. Copy contents of `apps/supabase/migrations/005_fix_tenant_config_fk.sql` ⭐ NEW
+14. Paste and execute
+15. Copy contents of `apps/supabase/migrations/006_create_dead_letter_queue.sql` ⭐ NEW
+16. Paste and execute
+17. Copy contents of `apps/supabase/migrations/007_create_error_logs.sql` ⭐ NEW
+18. Paste and execute
+19. Verify tables created: `tenants`, `orders`, `payments`, `tenant_config`, `dead_letter_queue`, `error_logs`, etc.
 
-**Deliverable:** ✅ Supabase project with all 13 tables created
+**Deliverable:** ✅ Supabase project with all tables created (including DLQ and error logs)
 
 ---
 
@@ -45,7 +53,9 @@ This is your complete step-by-step guide for Week 1 deployment. Follow this in o
 5. Get Phone Number ID from dashboard
 6. Configure webhook URL: `https://your-n8n-instance.com/webhook/whatsapp?tenant_id=sme_001`
 7. Set webhook verify token (generate with: `openssl rand -hex 32`)
-8. Test webhook reception (send test message)
+8. Set webhook secret (generate with: `openssl rand -hex 32`) → `SMSLEOPARD_WEBHOOK_SECRET` ⭐ NEW
+9. Test webhook reception (send test message)
+10. Test webhook signature validation (invalid signature should be rejected) ⭐ NEW
 
 **Deliverable:** ✅ SMSLeopard account with webhook configured
 
@@ -77,19 +87,24 @@ This is your complete step-by-step guide for Week 1 deployment. Follow this in o
 
 ---
 
-### 1.5 Environment Variables Setup (10 minutes)
+### 1.5 Environment Variables Setup (15 minutes)
 
 **Steps:**
-1. Copy `apps/whatsapp-business/.sample.env` to `apps/whatsapp-business/.env`
+1. Copy `.env.example` (root) or `apps/whatsapp-business/.sample.env` to `.env`
 2. Fill in all values:
    - Supabase URL, Service Role Key, Anon Key
-   - SMSLeopard Token, Phone Number ID
+   - SMSLeopard Token, Phone Number ID, Webhook Secret ⭐ NEW
    - SMS Provider API Key, Sender ID
    - M-Pesa Consumer Key, Secret, Shortcode, Passkey
+   - M-Pesa Consumer Secret (for webhook signature verification) ⭐ NEW
 3. Generate verify tokens: `openssl rand -hex 32`
-4. Test with: `node scripts/health-check.js`
+4. Generate webhook secrets: `openssl rand -hex 32` (for signature verification) ⭐ NEW
+5. Set `LOG_LEVEL=info` (or debug for development) ⭐ NEW
+6. Set `ALLOW_UNSIGNED_WEBHOOKS=false` in production ⭐ NEW
+7. Validate environment: `node scripts/validate-env.js` ⭐ NEW
+8. Test with: `node apps/whatsapp-business/scripts/health-check.js`
 
-**Deliverable:** ✅ All environment variables configured
+**Deliverable:** ✅ All environment variables configured and validated
 
 ---
 
@@ -100,10 +115,13 @@ This is your complete step-by-step guide for Week 1 deployment. Follow this in o
 **Steps:**
 1. Open Supabase SQL Editor
 2. Run: `SELECT COUNT(*) FROM tenant_config;`
-3. Run: `SELECT COUNT(*) FROM trades;`
-4. Verify all tables exist (should be 13 tables)
+3. Run: `SELECT COUNT(*) FROM orders;`
+4. Run: `SELECT COUNT(*) FROM dead_letter_queue;` ⭐ NEW
+5. Run: `SELECT COUNT(*) FROM error_logs;` ⭐ NEW
+6. Verify all tables exist (including new tables from migrations 005-007)
+7. Verify `tenant_config.tenant_uuid` FK relationship exists ⭐ NEW
 
-**Deliverable:** ✅ Database verified
+**Deliverable:** ✅ Database verified (all migrations applied)
 
 ---
 
@@ -127,15 +145,19 @@ This is your complete step-by-step guide for Week 1 deployment. Follow this in o
 
 ---
 
-### 2.3 Configure Webhooks (10 minutes)
+### 2.3 Configure Webhooks (15 minutes)
 
 **Steps:**
 1. In SMSLeopard dashboard, set webhook URL: `https://your-n8n-instance.com/webhook/whatsapp?tenant_id=sme_001`
 2. Set verify token (same as in .env)
-3. In M-Pesa Daraja dashboard, set callback URL: `https://your-n8n-instance.com/webhook/mpesa-callback?tenant_id=sme_001`
-4. Test webhook reception
+3. Set webhook secret (same as `SMSLEOPARD_WEBHOOK_SECRET` in .env) ⭐ NEW
+4. In M-Pesa Daraja dashboard, set callback URL: `https://your-n8n-instance.com/webhook/mpesa-callback?tenant_id=sme_001`
+5. Test webhook reception
+6. Test webhook signature validation:
+   - Send test webhook with invalid signature (should reject with 401) ⭐ NEW
+   - Send test webhook with valid signature (should process) ⭐ NEW
 
-**Deliverable:** ✅ Webhooks configured and tested
+**Deliverable:** ✅ Webhooks configured, tested, and signature validation verified
 
 ---
 
@@ -244,6 +266,84 @@ INSERT INTO tenant_config (
 - [ ] Message parsing 80%+ accuracy
 - [ ] First 5 traders onboarded
 - [ ] Zero data isolation breaches
+- [ ] All non-negotiables validated (see validation checklist below)
+
+---
+
+## 🔒 Non-Negotiables Validation (Architecture Principles)
+
+**Before completing Week 1, validate all 6 non-negotiables are preserved. See [ARCHITECTURE_PRINCIPLES.md](../core/ARCHITECTURE_PRINCIPLES.md) for full details.**
+
+### 1. Three-Layer Separation ✅
+**Validation:** Can I access all business data independently of WhatsApp?
+- [ ] Orders stored in Supabase (not in WhatsApp/n8n)
+- [ ] Payments stored in Supabase (not in WhatsApp/n8n)
+- [ ] Customers stored in Supabase (not in WhatsApp/n8n)
+- [ ] n8n workflows read/write from Supabase (not store business truth)
+
+**Test:** Delete WhatsApp webhook → Can I still query all orders/payments/customers in Supabase? ✅
+
+---
+
+### 2. Phone Number as Primary Identity ✅
+**Validation:** Can I find a customer's complete history using only phone number?
+- [ ] Phone number is UNIQUE in buyers/customers table
+- [ ] Phone number is INDEXED for fast lookups
+- [ ] All orders have customer_phone field
+- [ ] All payments have phone_number field
+- [ ] Can query: `SELECT * FROM trades WHERE customer_phone = '+254...'`
+
+**Test:** Query customer by phone: `SELECT * FROM trades WHERE customer_phone = '+254712345678'` ✅
+
+---
+
+### 3. Automated Payment Reconciliation ✅
+**Validation:** Can I match 95%+ of M-Pesa payments automatically?
+- [ ] M-Pesa webhook callback configured
+- [ ] Payment matching logic implemented (phone + amount ± tolerance)
+- [ ] Manual review queue exists for unmatched payments
+- [ ] Duplicate transaction handling (idempotency)
+- [ ] Payment matching workflow (06_reconcile_payment_v2) tested
+
+**Test:** Simulate M-Pesa callback → Verify payment auto-matched to order ✅
+
+---
+
+### 4. Explicit Consent Tracking ✅
+**Validation:** Can I prove compliance for every marketing message?
+- [ ] Consent table created (or consent fields in customers table)
+- [ ] Transactional vs marketing distinction implemented
+- [ ] Consent validation before sending marketing messages
+- [ ] Opt-out mechanism exists
+- [ ] Consent records logged (phone, channel, purpose, timestamp, source)
+
+**Test:** Try to send marketing message → Verify consent checked first ✅
+
+---
+
+### 5. Human-in-the-Loop Escalation ✅
+**Validation:** Can human reviewers access full context for edge cases?
+- [ ] Review queue table created (review_queue or daily_log)
+- [ ] Low-confidence orders flagged for review
+- [ ] Payment mismatches flagged for review
+- [ ] Context preservation (conversation history accessible)
+- [ ] Agent takeover mechanism (even if manual initially)
+
+**Test:** Create low-confidence order → Verify flagged in review queue ✅
+
+---
+
+### 6. Multi-Tenant Data Model ✅
+**Validation:** Can I add a second trader without code changes?
+- [ ] tenant_id field in all tables (trades, payments, products, etc.)
+- [ ] tenant_config table exists
+- [ ] Row-Level Security (RLS) enabled OR application-level filtering
+- [ ] Tenant-scoped queries (never query across tenants)
+- [ ] Config-driven setup (add tenant = insert row in tenant_config)
+
+**Test:** Insert second tenant in tenant_config → Verify data isolated ✅
+
+**If all 6 non-negotiables validated ✅, you're ready to scale.**
 
 ---
 
@@ -306,6 +406,14 @@ INSERT INTO tenant_config (
 - [ ] First trader onboarded
 - [ ] System monitoring active
 
+### Non-Negotiables Validation
+- [ ] Three-layer separation validated (data independent of WhatsApp)
+- [ ] Phone number as primary identity validated (unique, indexed)
+- [ ] Payment reconciliation validated (95%+ auto-match)
+- [ ] Consent tracking validated (transactional vs marketing)
+- [ ] Human escalation validated (review queue exists)
+- [ ] Multi-tenant design validated (can add 2nd trader without code)
+
 ---
 
 ## 🎯 Next Steps After Week 1
@@ -326,6 +434,15 @@ INSERT INTO tenant_config (
 
 ---
 
+## 📚 Reference Documents
+
+**Before starting tomorrow, review:**
+- [ARCHITECTURE_PRINCIPLES.md](../core/ARCHITECTURE_PRINCIPLES.md) - ⭐ **Non-negotiables vs flexible areas** (decision framework)
+- [WhatsApp_Commerce_Technical_KB.md](../core/WhatsApp_Commerce_Technical_KB.md) - Complete integration guides
+- [BUILD_PLAN.md](../core/BUILD_PLAN.md) - Stage-gated execution plan
+
+---
+
 **Last Updated:** January 9, 2026  
 **Status:** ✅ Locked In - Ready for Tomorrow  
-**Next:** Follow this guide step-by-step
+**Next:** Follow this guide step-by-step, validate non-negotiables before scaling

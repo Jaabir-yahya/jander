@@ -1,0 +1,266 @@
+{
+  "name": "19_revenue_collection_enforcer",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger (Daily 8 PM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "notes": "Daily at 8 PM. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders?payment_status=neq.paid&created_at=lt.{{new Date(Date.now() - 24*60*60*1000).toISOString()}}&select=id,tenant_id,customer_phone,amount,created_at,reminder_count,last_reminder_at&order=created_at.asc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Range",
+              "value": "0-999"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "query-unpaid-orders",
+      "name": "Query Unpaid Orders >24h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "notes": "Get unpaid orders older than 24 hours. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process each unpaid order\n// Calculate reminder level and message\nconst orders = Array.isArray($input.all()) ? $input.all() : [$input.item.json];\n\nreturn orders.map(order => {\n  const reminderCount = order.reminder_count || 0;\n  const orderAge = Math.floor((Date.now() - new Date(order.created_at).getTime()) / (1000 * 60 * 60)); // hours\n  \n  let reminderLevel = 'polite';\n  let message = `Hi! Just a friendly reminder about your order #${order.id.substring(0, 8)} for KSh ${order.amount}. Please complete payment when convenient. Asante!`;\n  let priority = 'medium';\n  \n  if (reminderCount === 1) {\n    reminderLevel = 'urgent';\n    message = `⚠️ Urgent: Your order #${order.id.substring(0, 8)} for KSh ${order.amount} is still pending payment. Please pay within 24 hours to avoid cancellation.`;\n    priority = 'high';\n  } else if (reminderCount === 2) {\n    reminderLevel = 'final';\n    message = `🚨 Final Notice: Order #${order.id.substring(0, 8)} for KSh ${order.amount} will be cancelled if payment is not received within 12 hours.`;\n    priority = 'high';\n  } else if (reminderCount >= 3) {\n    reminderLevel = 'escalate';\n    message = `Account suspended. Please contact support to arrange payment plan for order #${order.id.substring(0, 8)}.`;\n    priority = 'critical';\n  }\n  \n  return {\n    ...order,\n    reminderLevel,\n    message,\n    priority,\n    shouldEscalate: reminderCount >= 3,\n    newReminderCount: reminderCount + 1\n  };\n});"
+      },
+      "id": "process-orders",
+      "name": "Process Orders & Generate Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Calculate reminder level and message based on reminder count"
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "should-escalate",
+                    "leftValue": "={{$json.shouldEscalate}}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "escalate"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "should-not-escalate",
+                    "leftValue": "={{$json.shouldEscalate}}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "send-reminder"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-orders",
+      "name": "Route: Escalate vs Send Reminder",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [850, 300],
+      "notes": "Route orders: escalate (3+ reminders) vs send reminder"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "send-reminder",
+      "name": "Send Payment Reminder",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "notes": "Send WhatsApp reminder using 03_send_whatsapp_v2 workflow"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders?id=eq.{{$json.id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"reminder_count\": {{$json.newReminderCount}},\n  \"last_reminder_at\": \"{{new Date().toISOString()}}\"\n}",
+        "options": {}
+      },
+      "id": "update-order",
+      "name": "Update Order Reminder Count",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400],
+      "notes": "Update order with new reminder count and timestamp"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/support_cases",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"case_type\": \"billing\",\n  \"priority\": \"{{$json.priority}}\",\n  \"status\": \"open\",\n  \"automated\": true,\n  \"description\": \"Payment reminder escalated: Order #{{$json.id.substring(0, 8)}} for KSh {{$json.amount}} has {{$json.newReminderCount}} reminders. Customer: {{$json.customer_phone}}\",\n  \"assigned_to\": \"system\"\n}",
+        "options": {}
+      },
+      "id": "create-support-case",
+      "name": "Create Support Case (Escalated)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200],
+      "notes": "Create support case for escalated payment reminders. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summary of processed orders\nconst allOrders = $input.all();\nconst sent = allOrders.filter(o => !o.shouldEscalate).length;\nconst escalated = allOrders.filter(o => o.shouldEscalate).length;\n\nreturn {\n  processed: allOrders.length,\n  reminders_sent: sent,\n  escalated: escalated,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "notes": "Generate summary of processed orders"
+    }
+  ],
+  "connections": {
+    "Cron Trigger (Daily 8 PM)": {
+      "main": [[{"node": "Query Unpaid Orders >24h", "type": "main", "index": 0}]]
+    },
+    "Query Unpaid Orders >24h": {
+      "main": [[{"node": "Process Orders & Generate Messages", "type": "main", "index": 0}]]
+    },
+    "Process Orders & Generate Messages": {
+      "main": [[{"node": "Route: Escalate vs Send Reminder", "type": "main", "index": 0}]]
+    },
+    "Route: Escalate vs Send Reminder": {
+      "main": [
+        [{"node": "Create Support Case (Escalated)", "type": "main", "index": 0}],
+        [{"node": "Send Payment Reminder", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Payment Reminder": {
+      "main": [[{"node": "Update Order Reminder Count", "type": "main", "index": 0}]]
+    },
+    "Update Order Reminder Count": {
+      "main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]
+    },
+    "Create Support Case (Escalated)": {
+      "main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Revenue Collection Enforcer: Automated payment reminders (3-tier escalation). Daily at 8 PM. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+}
+

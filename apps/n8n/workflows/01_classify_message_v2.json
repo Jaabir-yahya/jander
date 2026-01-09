@@ -20,6 +20,87 @@
         "assignments": {
           "assignments": [
             {
+              "id": "headers",
+              "name": "headers",
+              "value": "={{$json.headers || {}}}",
+              "type": "object"
+            },
+            {
+              "id": "raw_body",
+              "name": "raw_body",
+              "value": "={{JSON.stringify($json)}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-headers",
+      "name": "Extract Headers & Body",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Extract headers and raw body for signature verification"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Meta WhatsApp Webhook Signature Verification\n// Production security: Verify webhook signature to prevent unauthorized requests\n// Reference: Meta WhatsApp Business API security requirements\n// Format: X-Hub-Signature-256: sha256=<hash>\n\nconst crypto = require('crypto');\nconst input = $input.item.json;\nconst headers = input.headers || {};\nconst rawBody = input.raw_body || JSON.stringify(input);\n\n// Meta sends signature in X-Hub-Signature-256 header with format: sha256=<hash>\nconst signatureHeader = headers['X-Hub-Signature-256'] \n  || headers['x-hub-signature-256']\n  || headers['X-Hub-Signature']\n  || headers['x-hub-signature'];\n\n// Extract hash from 'sha256=<hash>' format\nlet receivedSignature = null;\nif (signatureHeader) {\n  const match = signatureHeader.match(/sha256=(.+)/i);\n  if (match) {\n    receivedSignature = match[1];\n  } else {\n    // Fallback: assume entire header is the hash\n    receivedSignature = signatureHeader;\n  }\n}\n\n// Use Meta App Secret (from WhatsApp Business API settings)\nconst appSecret = process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;\n\nif (!receivedSignature) {\n  // In development, allow webhooks without signature (for testing)\n  if (process.env.NODE_ENV === 'development' || process.env.ALLOW_UNSIGNED_WEBHOOKS === 'true') {\n    return {\n      valid: true,\n      signature_verified: false,\n      warning: 'Webhook signature not verified (development mode)',\n      ...input\n    };\n  }\n  \n  return {\n    valid: false,\n    error: 'Missing X-Hub-Signature-256 header',\n    statusCode: 401,\n    security_event: 'missing_signature'\n  };\n}\n\nif (!appSecret) {\n  return {\n    valid: false,\n    error: 'WHATSAPP_APP_SECRET or META_APP_SECRET not configured',\n    statusCode: 500,\n    security_event: 'config_error'\n  };\n}\n\n// Meta signature: HMAC-SHA256(payload, app_secret) in hex format\nconst payloadString = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n\nconst expectedSignature = crypto\n  .createHmac('sha256', appSecret)\n  .update(payloadString)\n  .digest('hex');\n\n// Constant-time comparison (prevent timing attacks)\nlet isValid = false;\ntry {\n  isValid = crypto.timingSafeEqual(\n    Buffer.from(receivedSignature, 'hex'),\n    Buffer.from(expectedSignature, 'hex')\n  );\n} catch (e) {\n  // Signature format mismatch or invalid hex\n  isValid = false;\n}\n\nif (!isValid) {\n  return {\n    valid: false,\n    error: 'Invalid Meta WhatsApp signature',\n    statusCode: 401,\n    security_event: 'invalid_signature',\n    received_sig: receivedSignature.substring(0, 20) + '...',\n    expected_sig: expectedSignature.substring(0, 20) + '...'\n  };\n}\n\nreturn {\n  valid: true,\n  signature_verified: true,\n  ...input\n};"
+      },
+      "id": "verify-signature",
+      "name": "Verify Meta WhatsApp Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Production security: Verify Meta WhatsApp webhook signature (X-Hub-Signature-256). Reject if invalid (401)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "signature-valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-signature",
+      "name": "Check Signature Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{$json.statusCode || 401}}",
+        "responseBody": "={{ { error: $json.error, security_event: $json.security_event } }}",
+        "options": {}
+      },
+      "id": "return-signature-error",
+      "name": "Return Signature Error (401)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1050, 400],
+      "notes": "Return 401 if signature invalid (security requirement)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
               "id": "phone",
               "name": "phone",
               "value": "={{$json.message?.from || $json.entry[0]?.changes[0]?.value?.messages[0]?.from}}",
@@ -183,11 +264,87 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Handler: Classify and prepare error for logging\n// Industry standard error handling pattern\n\nconst error = $input.item.json.error || {};\nconst nodeName = $input.item.json.node?.name || 'unknown_node';\nconst errorMessage = error.message || 'Unknown error';\nconst errorCode = error.code || error.status || 'UNKNOWN';\nconst errorStack = error.stack || null;\n\n// Classify error\nlet errorType = 'NEEDS_REVIEW';\nlet severity = 'ERROR';\n\nif (\n  errorCode === 'ECONNREFUSED' ||\n  errorCode === 'ETIMEDOUT' ||\n  errorCode === 'ENOTFOUND' ||\n  errorCode === 429 ||\n  errorCode === 503 ||\n  errorCode === 502 ||\n  errorMessage.toLowerCase().includes('timeout') ||\n  errorMessage.toLowerCase().includes('network')\n) {\n  errorType = 'RETRYABLE';\n} else if (\n  errorCode === 401 ||\n  errorCode === 403 ||\n  errorMessage.toLowerCase().includes('unauthorized')\n) {\n  errorType = 'CRITICAL';\n  severity = 'CRITICAL';\n} else if (\n  errorCode === 400 ||\n  errorCode === 422 ||\n  errorMessage.toLowerCase().includes('validation')\n) {\n  errorType = 'NEEDS_REVIEW';\n}\n\n// Get context from previous nodes\nconst messageData = $('Extract Message Data').first()?.json || {};\nconst phone = messageData.phone || 'unknown';\n\nreturn {\n  error_type: errorType,\n  severity: severity,\n  service_name: 'whatsapp-webhook',\n  error_message: errorMessage,\n  error_code: errorCode,\n  error_stack: errorStack,\n  node_name: nodeName,\n  phone: phone,\n  message_id: messageData.message_id || null,\n  context: {\n    operation: 'classify_message',\n    node: nodeName,\n    phone: phone\n  },\n  status_code: errorCode >= 500 ? 500 : (errorCode >= 400 ? 400 : 500)\n};"
+      },
+      "id": "error-handler-classify",
+      "name": "Error Handler: Classify Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 500],
+      "notes": "Industry standard: Classify error (retryable, needs review, critical)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/error_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"service_name\": \"{{$json.service_name}}\",\n  \"error_type\": \"{{$json.error_type}}\",\n  \"message\": \"{{$json.error_message}}\",\n  \"stack_trace\": {{$json.error_stack ? JSON.stringify($json.error_stack) : 'null'}},\n  \"context\": {{JSON.stringify($json.context)}},\n  \"severity\": \"{{$json.severity}}\"\n}",
+        "options": {}
+      },
+      "id": "error-log",
+      "name": "Error Handler: Log to error_logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 500],
+      "notes": "Industry standard: Log all errors to error_logs table for monitoring"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{$('Error Handler: Classify Error').first().json.status_code || 500}}",
+        "responseBody": "={{ { error: $('Error Handler: Classify Error').first().json.error_message, error_type: $('Error Handler: Classify Error').first().json.error_type, service: 'classify_message' } }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Handler: Return Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 500],
+      "notes": "Industry standard: Return appropriate error response to webhook"
     }
   ],
   "connections": {
     "WhatsApp Webhook": {
-      "main": [[{"node": "Extract Message Data", "type": "main", "index": 0}]]
+      "main": [[{"node": "Extract Headers & Body", "type": "main", "index": 0}]]
+    },
+    "Extract Headers & Body": {
+      "main": [[{"node": "Verify Meta WhatsApp Signature", "type": "main", "index": 0}]]
+    },
+    "Verify Meta WhatsApp Signature": {
+      "main": [[{"node": "Check Signature Valid", "type": "main", "index": 0}]]
+    },
+    "Check Signature Valid": {
+      "main": [
+        [{"node": "Extract Message Data", "type": "main", "index": 0}],
+        [{"node": "Return Signature Error (401)", "type": "main", "index": 0}]
+      ]
     },
     "Extract Message Data": {
       "main": [[{"node": "Classify Message Type", "type": "main", "index": 0}]]
@@ -196,13 +353,22 @@
       "main": [[{"node": "Query Conversation State", "type": "main", "index": 0}]]
     },
     "Query Conversation State": {
-      "main": [[{"node": "Check Buyer", "type": "main", "index": 0}, {"node": "Check Seller", "type": "main", "index": 0}]]
+      "main": [[{"node": "Check Buyer", "type": "main", "index": 0}, {"node": "Check Seller", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
     },
     "Check Buyer": {
-      "main": [[{"node": "Determine User Type & Window", "type": "main", "index": 0}]]
+      "main": [[{"node": "Determine User Type & Window", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
     },
     "Check Seller": {
-      "main": [[{"node": "Determine User Type & Window", "type": "main", "index": 0}]]
+      "main": [[{"node": "Determine User Type & Window", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Classify Error": {
+      "main": [[{"node": "Error Handler: Log to error_logs", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Log to error_logs": {
+      "main": [[{"node": "Error Handler: Return Error Response", "type": "main", "index": 0}]]
     },
     "Determine User Type & Window": {
       "main": [[{"node": "Merge Classification", "type": "main", "index": 0}]]
@@ -220,6 +386,7 @@
   "triggerCount": 0,
   "updatedAt": "2026-01-09T00:00:00.000Z",
   "versionId": "2",
-  "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for Supabase queries. No custom services. See docs/NATIVE_INTEGRATIONS.md"
+      "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for Supabase queries. No custom services. See docs/NATIVE_INTEGRATIONS.md\n\n✅ ERROR HANDLING: Industry-standard error handling added:\n- Error classification (retryable, needs review, critical)\n- Error logging to error_logs table\n- Appropriate error responses\n- Connected via On Error outputs from HTTP Request nodes"
 }
+
 

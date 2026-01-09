@@ -75,7 +75,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{$env.SMS_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_API_KEY : 'ApiKey ' + $env.AFRICASTALKING_API_KEY}}"
+              "value": "={{$env.SMS_PROVIDER === 'africastalking' ? 'ApiKey ' + $env.AFRICASTALKING_API_KEY : ($env.LOCAL_SMS_API_KEY ? 'Bearer ' + $env.LOCAL_SMS_API_KEY : '')}}"
             },
             {
               "name": "Content-Type",
@@ -103,7 +103,7 @@
         "options": {}
       },
       "id": "send-sms",
-      "name": "Send via SMSLeopard",
+      "name": "Send via SMS Provider",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [1050, 200]
@@ -215,6 +215,70 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Handler: Classify SMS fallback error\n// Industry standard: SMS is already a fallback, so errors are logged but not retried\n\nconst error = $input.item.json.error || {};\nconst nodeName = $input.item.json.node?.name || 'unknown_node';\nconst errorMessage = error.message || 'Unknown error';\nconst errorCode = error.code || error.status || 'UNKNOWN';\nconst errorStack = error.stack || null;\n\n// Classify error\nlet errorType = 'NEEDS_REVIEW';\nlet severity = 'ERROR';\n\n// Critical errors (authentication, configuration)\nif (\n  errorCode === 401 ||\n  errorCode === 403 ||\n  errorMessage.toLowerCase().includes('unauthorized')\n) {\n  errorType = 'CRITICAL';\n  severity = 'CRITICAL';\n} else if (\n  errorCode === 400 ||\n  errorCode === 422 ||\n  errorMessage.toLowerCase().includes('validation')\n) {\n  errorType = 'NEEDS_REVIEW';\n} else if (\n  errorCode === 'ECONNREFUSED' ||\n  errorCode === 'ETIMEDOUT' ||\n  errorCode === 503\n) {\n  // Network errors - still needs review (SMS is fallback, no retry)\n  errorType = 'NEEDS_REVIEW';\n}\n\n// Get context from previous nodes\nconst inputData = $('Check Message Type').first()?.json || {};\nconst phone = inputData.phone || 'unknown';\nconst reason = inputData.reason || 'unknown';\n\nreturn {\n  error_type: errorType,\n  severity: severity,\n  service_name: 'sms-fallback',\n  error_message: errorMessage,\n  error_code: errorCode,\n  error_stack: errorStack,\n  node_name: nodeName,\n  phone: phone,\n  fallback_reason: reason,\n  context: {\n    operation: 'send_sms_fallback',\n    node: nodeName,\n    phone: phone,\n    reason: reason\n  },\n  status_code: 500\n};"
+      },
+      "id": "error-handler-classify",
+      "name": "Error Handler: Classify Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 400],
+      "notes": "Industry standard: Classify SMS fallback errors (needs review, critical)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/error_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"service_name\": \"{{$('Error Handler: Classify Error').first().json.service_name}}\",\n  \"error_type\": \"{{$('Error Handler: Classify Error').first().json.error_type}}\",\n  \"message\": \"{{$('Error Handler: Classify Error').first().json.error_message}}\",\n  \"stack_trace\": {{$('Error Handler: Classify Error').first().json.error_stack ? JSON.stringify($('Error Handler: Classify Error').first().json.error_stack) : 'null'}},\n  \"context\": {{JSON.stringify($('Error Handler: Classify Error').first().json.context)}},\n  \"severity\": \"{{$('Error Handler: Classify Error').first().json.severity}}\"\n}",
+        "options": {}
+      },
+      "id": "error-log",
+      "name": "Error Handler: Log to error_logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 400],
+      "notes": "Industry standard: Log all SMS fallback errors to error_logs table"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 500,
+        "responseBody": "={{ { success: false, error: $('Error Handler: Classify Error').first().json.error_message, service: 'sms_fallback' } }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Handler: Return Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1650, 400],
+      "notes": "Industry standard: Return error response for SMS fallback failures"
     }
   ],
   "connections": {
@@ -231,13 +295,21 @@
       ]
     },
     "Format SMS": {
-      "main": [[{"node": "Send via SMSLeopard", "type": "main", "index": 0}]]
+      "main": [[{"node": "Send via SMS Provider", "type": "main", "index": 0}]]
     },
-    "Send via SMSLeopard": {
-      "main": [[{"node": "Log SMS Send", "type": "main", "index": 0}]]
+    "Send via SMS Provider": {
+      "main": [[{"node": "Log SMS Send", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
     },
     "Log SMS Send": {
-      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Classify Error": {
+      "main": [[{"node": "Error Handler: Log to error_logs", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Log to error_logs": {
+      "main": [[{"node": "Error Handler: Return Error Response", "type": "main", "index": 0}]]
     }
   },
   "pinData": {},
@@ -249,6 +321,7 @@
   "triggerCount": 0,
   "updatedAt": "2026-01-09T00:00:00.000Z",
   "versionId": "2",
-  "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for SMS provider API and Supabase. No custom services. See docs/NATIVE_INTEGRATIONS.md"
+      "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for SMS provider API and Supabase. No custom services. See docs/NATIVE_INTEGRATIONS.md\n\n✅ ERROR HANDLING: Industry-standard error handling for SMS fallback:\n- Error classification (needs review, critical)\n- Error logging to error_logs table\n- No retry logic (SMS is already a fallback)\n- Error response returned to caller\n- Connected via On Error outputs from HTTP Request nodes"
 }
+
 

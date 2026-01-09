@@ -1,0 +1,225 @@
+{
+  "name": "16_report_daily_whatsapp",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger (Daily 8 AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "notes": "Daily at 8 AM. Reference: docs/core/DATA_INTELLIGENCE_SYSTEM.md Section 12.2"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenants?select=id",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Range",
+              "value": "0-999"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-tenants",
+      "name": "Get All Tenants",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "notes": "Get all active tenants for daily reports"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare tenant data with yesterday's date\nconst tenants = Array.isArray($input.all()) ? $input.all() : [$input.item.json];\nconst yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\nconst yesterdayStr = yesterday.toISOString().split('T')[0];\n\nreturn tenants.map(tenant => ({\n  tenant_id: tenant.id,\n  report_date: yesterdayStr,\n  date_start: yesterdayStr + 'T00:00:00Z',\n  date_end: yesterdayStr + 'T23:59:59Z'\n}));"
+      },
+      "id": "prepare-tenant-data",
+      "name": "Prepare Tenant Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Prepare yesterday's date range for each tenant"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/analytics_daily_summary?tenant_id=eq.{{$json.tenant_id}}&date=eq.{{$json.report_date}}&select=*",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-daily-summary",
+      "name": "Get Daily Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Get yesterday's analytics summary from materialized view"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders?tenant_id=eq.{{$json.tenant_id}}&created_at=gte.{{$json.date_start}}&created_at=lte.{{$json.date_end}}&payment_status=neq.paid&select=id,total_amount&limit=10",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-pending-orders",
+      "name": "Get Pending Orders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 400],
+      "notes": "Get pending orders from yesterday"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenant_config?tenant_id=eq.{{$json.tenant_id}}&select=owner_phone,business_name",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-tenant-config",
+      "name": "Get Tenant Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 500],
+      "notes": "Get owner phone and business name for WhatsApp delivery"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format daily report message\nconst summary = $('Get Daily Summary').first()?.json?.[0] || {};\nconst pendingOrders = $('Get Pending Orders').first()?.json || [];\nconst tenantConfig = $('Get Tenant Config').first()?.json?.[0] || {};\nconst tenantData = $('Prepare Tenant Data').first().json;\n\nconst revenue = summary.revenue || 0;\nconst orders = summary.order_count || 0;\nconst leads = summary.lead_count || 0;\nconst conversionRate = summary.conversion_rate || 0;\nconst pendingCount = pendingOrders.length;\nconst pendingAmount = pendingOrders.reduce((sum, o) => sum + parseFloat(o.total_amount || 0), 0);\n\nconst businessName = tenantConfig.business_name || 'Your Business';\nconst reportDate = new Date(tenantData.report_date).toLocaleDateString('en-KE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nconst message = `📊 Daily Report for ${businessName}\n──────────────────\n📅 ${reportDate}\n\n✅ Revenue: KSh ${revenue.toLocaleString('en-KE')}\n✅ Orders: ${orders}\n✅ New Leads: ${leads}\n📈 Conversion: ${conversionRate.toFixed(1)}%\n\n${pendingCount > 0 ? `⚠️ Pending: ${pendingCount} orders (KSh ${pendingAmount.toLocaleString('en-KE')})\n` : ''}──────────────────\nView details: [Dashboard Link]\n\nAsante! 🎉`;\n\nreturn {\n  tenant_id: tenantData.tenant_id,\n  owner_phone: tenantConfig.owner_phone,\n  message: message,\n  report_date: tenantData.report_date,\n  metrics: {\n    revenue: revenue,\n    orders: orders,\n    leads: leads,\n    conversion_rate: conversionRate,\n    pending_count: pendingCount,\n    pending_amount: pendingAmount\n  }\n};"
+      },
+      "id": "format-message",
+      "name": "Format WhatsApp Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400],
+      "notes": "Format daily report as WhatsApp message with emojis"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "send-whatsapp",
+      "name": "Send Daily Report via WhatsApp",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "notes": "Send formatted daily report to business owner via WhatsApp"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summary of daily reports sent\nconst allReports = $input.all();\nconst sent = allReports.filter(r => r.owner_phone).length;\nconst totalRevenue = allReports.reduce((sum, r) => sum + (r.metrics?.revenue || 0), 0);\n\nreturn {\n  reports_sent: sent,\n  total_tenants: allReports.length,\n  total_revenue_reported: totalRevenue,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 400],
+      "notes": "Generate summary of daily reports sent"
+    }
+  ],
+  "connections": {
+    "Cron Trigger (Daily 8 AM)": {
+      "main": [[{"node": "Get All Tenants", "type": "main", "index": 0}]]
+    },
+    "Get All Tenants": {
+      "main": [[{"node": "Prepare Tenant Data", "type": "main", "index": 0}]]
+    },
+    "Prepare Tenant Data": {
+      "main": [
+        [{"node": "Get Daily Summary", "type": "main", "index": 0}],
+        [{"node": "Get Pending Orders", "type": "main", "index": 0}],
+        [{"node": "Get Tenant Config", "type": "main", "index": 0}]
+      ]
+    },
+    "Get Daily Summary": {
+      "main": [[{"node": "Format WhatsApp Message", "type": "main", "index": 0}]]
+    },
+    "Get Pending Orders": {
+      "main": [[{"node": "Format WhatsApp Message", "type": "main", "index": 0}]]
+    },
+    "Get Tenant Config": {
+      "main": [[{"node": "Format WhatsApp Message", "type": "main", "index": 0}]]
+    },
+    "Format WhatsApp Message": {
+      "main": [[{"node": "Send Daily Report via WhatsApp", "type": "main", "index": 0}]]
+    },
+    "Send Daily Report via WhatsApp": {
+      "main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Daily WhatsApp Report: Send daily summary via WhatsApp at 8 AM. Reference: docs/core/DATA_INTELLIGENCE_SYSTEM.md Section 12.2"
+}
+

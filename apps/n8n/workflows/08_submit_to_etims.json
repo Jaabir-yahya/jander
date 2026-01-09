@@ -375,3 +375,4 @@
   "notes": "✅ NATIVE: Uses HTTP Request nodes for Supabase and KRA OSCU API. No custom services. See docs/NATIVE_INTEGRATIONS.md"
 }
 
+

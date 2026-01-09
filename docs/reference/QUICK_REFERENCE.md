@@ -2,6 +2,8 @@
 
 **One-page cheat sheet for building WhatsApp-as-a-Service in Nairobi.**
 
+**For detailed technical integration guides, see:** [`WhatsApp_Commerce_Technical_KB.md`](../core/WhatsApp_Commerce_Technical_KB.md) ⭐
+
 ---
 
 ## 🧠 Mental Model

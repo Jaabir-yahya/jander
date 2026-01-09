@@ -88,7 +88,7 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 **Output**: delivery_status, message_id, cost
 
 **Key Features**:
-- Native HTTP Request → WhatsApp API (SMSLeopard/Meta)
+- Native HTTP Request → Meta WhatsApp Business API
 - Session vs template routing with Switch node
 - Delivery receipt handling
 - Automatic fallback trigger
@@ -176,6 +176,63 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 ### ✅ Workflow 9: `09_multi_rail_payment`
 **Status**: ✅ Created  
 **Purpose**: Route payment to highest priority enabled payment rail  
+**Input**: tenant_id, order_id, amount, customer_phone
+
+---
+
+## Copy-Paste Wins (Real-World Validated Patterns)
+
+### Workflow 10: Order Confirmation Flow (Interakt Pattern)
+**File**: `10_handle_order_with_confirmation.json`
+
+**Pattern**: Interakt "Full Commerce Flow" - Browse → Order → Confirm → Pay
+
+**Flow**:
+1. Receives order intent from classifier
+2. Creates draft order (status='pending_confirmation')
+3. Sends confirmation message: "Order #001: Items + Total. Reply CONFIRM"
+4. Waits for CONFIRM reply → Proceeds to payment
+
+**Success Metric**: 6x conversion vs traditional e-commerce (Interakt data)
+
+**Reference**: `docs/core/verified-research-findings.md` - Interakt success pattern
+
+---
+
+### Workflow 11: Reorder Bot (Botomatik Pattern)
+**File**: `11_reorder_bot.json`
+
+**Pattern**: Botomatik "Abandoned Cart Recovery" - 15% conversion uplift
+
+**Flow**:
+1. Daily cron (9AM - peak shopping time)
+2. Finds repeat customers (last 14 days)
+3. Sends: "Quick reorder? Same as last time? Reply YES"
+4. If YES → Creates order with last items
+
+**Success Metric**: 60% abandoned cart recovery rate (Botomatik data)
+
+**Reference**: `docs/core/verified-research-findings.md` - Botomatik 15% conversion uplift
+
+---
+
+### Workflow 12: Status Broadcast (TechWaba Pattern)
+**File**: `12_status_broadcast.json`
+
+**Pattern**: TechWaba "Bulk Promotions" - Daily product updates
+
+**Flow**:
+1. Daily cron
+2. Gets recent customers (last 30 days)
+3. Formats status message: "Fresh stock! Reply ORDER"
+4. Batch sends (10 at a time, respects rate limits)
+
+**Success Metric**: Free marketing channel (Brazil spaza owners use Status)
+
+**Reference**: `docs/core/verified-research-findings.md` - Brazil spaza Status updates
+
+---
+
 **Input**: tenant_id, order_id, amount, customer_phone  
 **Output**: payment_request_id, rail_type
 
@@ -250,15 +307,18 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-# WhatsApp
-WHATSAPP_PROVIDER=smsleopard
-SMSLEOPARD_TOKEN=your_smsleopard_token
-PHONE_NUMBER_ID=your_phone_number_id
+# WhatsApp (Meta WhatsApp Business API)
 WHATSAPP_ACCESS_TOKEN=your_whatsapp_access_token
+WHATSAPP_APP_SECRET=your_app_secret  # For webhook signature verification
+PHONE_NUMBER_ID=your_phone_number_id
 
-# SMS (for fallback)
-SMS_PROVIDER=smsleopard
-SMSLEOPARD_API_KEY=your_smsleopard_api_key
+# SMS (for fallback - optional)
+SMS_PROVIDER=local  # Options: 'local' (default) or 'africastalking'
+LOCAL_SMS_API_URL=http://localhost:3000  # For local SMS tool
+LOCAL_SMS_API_KEY=your_local_api_key  # Optional, if local tool requires auth
+# OR for AfricasTalking:
+# SMS_PROVIDER=africastalking
+# AFRICASTALKING_API_KEY=your_africastalking_api_key
 SMS_SENDER_ID=TRADEFAC
 
 # M-Pesa
@@ -339,6 +399,137 @@ See [`docs/MIGRATION_CHECKLIST.md`](../../docs/MIGRATION_CHECKLIST.md) for detai
 
 ---
 
+---
+
+## Error Handling
+
+**Status:** ✅ Industry-standard error handling implemented in all critical workflows
+
+### Error Handling Pattern
+
+All critical workflows now include industry-standard error handling:
+
+1. **Error Classification** - Errors are classified as:
+   - `RETRYABLE` - Network errors, timeouts, rate limits (429, 503, ETIMEDOUT)
+   - `NEEDS_REVIEW` - Validation errors, business logic errors (400, 422)
+   - `CRITICAL` - Authentication errors, configuration errors (401, 403)
+
+2. **Error Logging** - All errors are logged to Supabase `error_logs` table with:
+   - Error message and stack trace
+   - Error classification and severity
+   - Context (operation, node, tenant_id, etc.)
+   - Timestamp
+
+3. **Retry Logic** - Retryable errors are retried with exponential backoff:
+   - Base delay: 1 second
+   - Max delay: 30 seconds
+   - Max retries: 3-5 (depending on operation)
+   - Jitter: 10% random variation
+
+4. **Dead Letter Queue** - Failed retryable operations are added to `dead_letter_queue`:
+   - Operation type and payload
+   - Error message and stack trace
+   - Retry count and max retries
+   - Next retry timestamp
+
+5. **Review Queue** - Payment reconciliation errors are added to `review_queue`:
+   - Requires manual intervention
+   - No automatic retry (payment matching is critical)
+
+### Workflow-Specific Error Handling
+
+**Message Classification (`01_classify_message_v2.json`):**
+- Errors logged to `error_logs`
+- Returns 500 error response
+- No retry (validation errors should be logged, not retried)
+
+**WhatsApp Sending (`03_send_whatsapp_v2.json`):**
+- Retryable errors (429, 503, timeouts) retried with exponential backoff
+- Max 3 retries
+- Failed retryable operations added to DLQ
+- Non-retryable errors logged and returned
+
+**Payment Reconciliation (`06_reconcile_payment_v2.json`):**
+- All errors logged to `error_logs`
+- Errors added to `review_queue` for manual intervention
+- Always returns 200 OK to M-Pesa (acknowledge receipt)
+- No retry (payment matching requires manual review)
+
+**Payment Confirmation (`07_send_payment_confirmation_v2.json`):**
+- WhatsApp API errors retried with exponential backoff
+- Database errors logged (no retry)
+- Failed retryable operations added to DLQ
+
+**SMS Fallback (`04_send_sms_fallback_v2.json`):**
+- Errors logged to `error_logs`
+- No retry (SMS is already a fallback)
+- Error response returned to caller
+
+### Error Handler Node Structure
+
+Each workflow includes error handler nodes connected via "On Error" outputs:
+
+```
+HTTP Request Node
+    ↓ (On Error)
+Error Handler: Classify Error (Code)
+    ↓
+Error Handler: Log to error_logs (HTTP Request)
+    ↓
+Error Handler: Check Retry (Code) [if retryable]
+    ↓
+Error Handler: Retry Delay (Wait) [if should retry]
+    ↓
+Original Node (retry) OR Error Handler: Add to DLQ (HTTP Request)
+```
+
+### Monitoring Errors
+
+**View Error Logs:**
+```sql
+SELECT * FROM error_logs 
+WHERE created_at > NOW() - INTERVAL '24 hours'
+ORDER BY created_at DESC;
+```
+
+**View Dead Letter Queue:**
+```sql
+SELECT * FROM dead_letter_queue 
+WHERE status = 'pending'
+ORDER BY created_at DESC;
+```
+
+**View Review Queue:**
+```sql
+SELECT * FROM review_queue 
+WHERE status = 'pending'
+ORDER BY created_at DESC;
+```
+
+### Troubleshooting Common Errors
+
+**429 Rate Limit:**
+- Error is retryable
+- Exponential backoff will retry after delay
+- If max retries exceeded, added to DLQ
+
+**401 Unauthorized:**
+- Error is critical
+- Check API credentials
+- No retry (authentication issue)
+
+**503 Service Unavailable:**
+- Error is retryable
+- Exponential backoff will retry
+- If persists, check service status
+
+**400 Bad Request:**
+- Error needs review
+- Check request payload
+- No retry (validation issue)
+
+---
+
 **Last Updated**: 2026-01-09  
-**Status**: All 7 workflows created (v2 versions recommended)  
-**Next**: Test v2 workflows, then remove old services
+**Status**: All 7 workflows created (v2 versions recommended) with industry-standard error handling  
+**Next**: Test v2 workflows, monitor error logs

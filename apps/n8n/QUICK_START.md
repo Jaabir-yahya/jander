@@ -79,3 +79,4 @@ Workflows are stored in `apps/n8n/*.json`:
 - Full setup: [DOCKER_SETUP.md](DOCKER_SETUP.md)
 - Workflows: [README.md](README.md)
 
+

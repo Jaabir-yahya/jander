@@ -193,3 +193,4 @@ COMMENT ON COLUMN tenant_config.tenant_id IS 'Unique tenant identifier (e.g., sm
 COMMENT ON COLUMN tenant_config.payment_rails IS 'JSONB array of payment rails with priority and enabled status';
 COMMENT ON COLUMN tenant_config.tax_system IS 'JSONB object with tax system configuration (eTIMS/KRA)';
 
+

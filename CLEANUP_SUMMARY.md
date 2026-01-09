@@ -1,184 +1,129 @@
-# Project Cleanup & Organization Summary
+# Documentation Cleanup Summary
 
-This document summarizes the cleanup and organization work completed on the Commerce Nairobi MVP project.
-
----
-
-## Security Improvements
-
-### ✅ Created Root `.gitignore`
-- Comprehensive security-focused `.gitignore` protecting:
-  - All `.env*` files (except `.env.example`)
-  - `credentials/` directory
-  - API keys, certificates, and private keys
-  - `node_modules/`
-  - Database files, backup files
-  - n8n data, Docker volumes, ngrok config
-
-### ✅ Created `SECURITY.md`
-- Comprehensive security best practices guide
-- Environment variable management
-- API key protection guidelines
-- Credentials storage best practices
-- Incident response procedures
-- Security checklist
-
-### ✅ Fixed Hardcoded Tokens
-- Updated test scripts to read from environment variables:
-  - `test-webhook.sh`
-  - `scripts/test-live-now.sh`
-  - `scripts/run-live-tests.sh`
-- Removed hardcoded verify tokens (now fail gracefully if not set)
-- Updated `.sample.env` with comprehensive template
-
-### ✅ Created `.gitattributes`
-- Proper line ending handling
-- Binary file detection
-- Cross-platform compatibility
+**Date:** January 9, 2026  
+**Status:** ✅ Cleanup Complete
 
 ---
 
-## Documentation Organization
+## 🎯 Goal
 
-### ✅ Consolidated Setup Guides
-- **SETUP.md**: Prerequisites checklist + quick implementation steps
-- **GETTING_STARTED.md**: Detailed step-by-step guide with troubleshooting
-- Both files now reference each other and link to `docs/WEEK1_EXECUTION_PLAN.md`
+Organize documentation, remove redundancies, focus on core docs, reduce context overflow.
 
-### ✅ Moved Historical Documents
-- `IMPLEMENTATION_SUMMARY.md` → `docs/IMPLEMENTATION_SUMMARY.md` (historical reference)
-
-### ✅ Updated Main README
-- Added security section with link to `SECURITY.md`
-- Improved Quick Start navigation
-- Better cross-references to all documentation
+**Philosophy:** Learn from proven patterns (India/Brazil/Nigeria) → Adapt to local context → Stay disciplined on costs, rollout speed, and operational simplicity.
 
 ---
 
-## Git Repository Setup
+## ✅ Actions Taken
 
-### ✅ Initialized Git Repository
-- Repository initialized as private-ready
-- All sensitive files excluded via `.gitignore`
-- Ready for first commit
+### 1. Created Strategic Setup Guide
+- **New:** `docs/core/STRATEGIC_SETUP.md`
+- Based on proven patterns from India, Brazil, Nigeria, Kenya
+- Prioritizes setup based on what works
+- Focuses on orchestration first, then webhooks, then testing
 
-### ✅ Created `.github/dependabot.yml`
-- Automatic dependency updates
-- Security-focused updates
-- Weekly schedule for npm packages
+### 2. Removed Redundant Files
+
+**Deleted:**
+- `docshome/` directory (entire directory - all files redundant)
+- `COMPLETE_SETUP_GUIDE.md` (merged into STRATEGIC_SETUP.md)
+- `SETUP_STATUS.md` (merged into STRATEGIC_SETUP.md)
+- `PASSKEY_INFO.md` (info in Technical KB)
+- `MCP_QUICK_SETUP.md` (merged into MCP_SETUP.md)
+- `MCP_STATUS.md` (temporary file)
+- `docs/PROJECT_MASTER.md` (duplicate of core version)
+- `docs/BUILD_COMPLETE.md` (outdated status)
+
+### 3. Updated Core Documentation
+- Updated `docs/00_START_HERE.md` with new structure
+- Added reference to `STRATEGIC_SETUP.md`
+- Removed references to deleted files
 
 ---
 
-## File Structure
+## 📁 Clean Documentation Structure
 
-### Current Structure (Organized)
 ```
-jander/
-├── .gitignore              ✅ Root security .gitignore
-├── .gitattributes          ✅ Cross-platform compatibility
-├── .github/
-│   └── dependabot.yml      ✅ Auto dependency updates
-├── SECURITY.md             ✅ Security best practices
-├── SETUP.md                ✅ Prerequisites checklist
-├── GETTING_STARTED.md      ✅ Detailed implementation guide
-├── README.md               ✅ Main project overview
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── BUILD_PLAN.md
-│   ├── CONTEXT.md
-│   ├── WORKFLOWS.md
-│   ├── WEEK1_EXECUTION_PLAN.md
-│   ├── WEEKLY_CHECKIN.md
-│   ├── IMPLEMENTATION_SUMMARY.md  ✅ Moved here
-│   └── README.md
-├── apps/
-│   ├── whatsapp-business/
-│   │   ├── .sample.env     ✅ Updated template
-│   │   └── ...
-│   ├── n8n/
-│   ├── scripts/
-│   └── supabase/
-├── tests/
-├── traders/
-└── templates/
+docs/
+├── 00_START_HERE.md          # Master index
+├── README.md                  # Documentation index
+├── core/                      # ⭐ Single source of truth (5 essential docs)
+│   ├── PROJECT_MASTER.md     # Complete context
+│   ├── ARCHITECTURE_PRINCIPLES.md  # Non-negotiables
+│   ├── BUILD_PLAN.md          # Execution plan
+│   ├── WORKFLOWS.md           # Business processes
+│   ├── WhatsApp_Commerce_Technical_KB.md  # Technical specs
+│   ├── ARCHITECTURE.md        # System design
+│   └── STRATEGIC_SETUP.md     # Setup strategy (NEW)
+├── architecture/              # Architecture details
+│   ├── WAAS_ARCHITECTURE.md
+│   ├── TRADE_FACILITATOR_ARCHITECTURE.md
+│   └── NATIVE_INTEGRATIONS.md
+├── guides/                    # Implementation guides
+│   ├── WEEK1_ACTION_PLAN.md
+│   ├── MULTI_TENANT_GUIDE.md
+│   └── MIGRATION_CHECKLIST.md
+├── reference/                 # Reference materials
+│   ├── QUICK_REFERENCE.md
+│   ├── TEMPLATE_REGISTRY.md
+│   └── ...
+├── MCP_SETUP.md               # MCP configuration
+└── archive/                   # Historical reference
+    └── ...
 ```
 
 ---
 
-## Security Checklist
+## 🎯 Core Documentation (5 Essential Docs)
 
-Before making repository public or sharing:
+1. **PROJECT_MASTER.md** - Complete project context
+2. **ARCHITECTURE_PRINCIPLES.md** - Non-negotiables vs flexible areas
+3. **BUILD_PLAN.md** - Execution plan (Weeks 1-12)
+4. **WORKFLOWS.md** - Business processes
+5. **WhatsApp_Commerce_Technical_KB.md** - Technical specs
 
-- [x] All `.env*` files excluded from Git
-- [x] `credentials/` directory excluded
-- [x] Hardcoded tokens removed from scripts
-- [x] `.gitignore` comprehensive and tested
-- [x] `SECURITY.md` created with best practices
-- [x] Test scripts read from environment variables
-- [x] `.sample.env` files use placeholders
+**Plus:** `STRATEGIC_SETUP.md` - Setup strategy based on proven patterns
 
 ---
 
-## Next Steps
+## 💡 Key Insights from Research
 
-1. **Review Git Status:**
-   ```bash
-   git status
-   ```
+### India Pattern (WhatsApp Commerce Leaders)
+- ✅ Start with orchestration layer (n8n)
+- ✅ Database as single source of truth (Supabase)
+- ✅ Payment reconciliation automated from day 1
+- ✅ Multi-tenant from start
 
-2. **Stage All Files:**
-   ```bash
-   git add .
-   ```
+### Brazil Pattern (Payment Integration)
+- ✅ Native payment integrations (no wrappers)
+- ✅ Multi-rail payments
+- ✅ Tax compliance automated
+- ✅ Human-in-the-loop for edge cases
 
-3. **Review What Will Be Committed:**
-   ```bash
-   git status
-   ```
-
-4. **Verify No Secrets:**
-   ```bash
-   git diff --cached | grep -i "password\|secret\|token\|key"
-   ```
-
-5. **Initial Commit:**
-   ```bash
-   git commit -m "Initial commit: Project cleanup and organization
-
-   - Added comprehensive .gitignore with security best practices
-   - Created SECURITY.md with credentials management guidelines
-   - Fixed hardcoded tokens in test scripts
-   - Organized documentation structure
-   - Updated setup guides with cross-references
-   - Initialized Git repository with proper security settings"
-   ```
-
-6. **Create Private Repository on GitHub/GitLab:**
-   - Go to GitHub/GitLab and create new private repository
-   - Add remote:
-     ```bash
-     git remote add origin <repository-url>
-     ```
-   - Push:
-     ```bash
-     git push -u origin main
-     ```
-
-7. **Verify Repository is Private:**
-   - Confirm repository settings show "Private"
-   - Test that sensitive files are not in Git history
+### Nigeria Pattern (Scale & Reliability)
+- ✅ Phone number as primary identity
+- ✅ Consent tracking from day 1
+- ✅ Fallback strategies (WhatsApp → SMS)
+- ✅ Offline-first design
 
 ---
 
-## Reminders
+## 🚀 Next Steps
 
-- ⚠️ **Never commit `.env` files**
-- ⚠️ **Never commit `credentials/` directory**
-- ⚠️ **Always use environment variables for secrets**
-- ⚠️ **Review `git status` before committing**
-- ⚠️ **Keep repository private until ready for public release**
+1. **Import n8n workflows** (Priority 1-5 from STRATEGIC_SETUP.md)
+2. **Configure webhooks** (Meta + M-Pesa)
+3. **Test end-to-end** (validate flow)
+
+**Reference:** `docs/core/STRATEGIC_SETUP.md` for complete setup strategy
 
 ---
 
-**Cleanup completed on:** $(date)  
-**Repository ready for:** Private Git hosting (GitHub/GitLab/Bitbucket)
+**Benefits:**
+- ✅ Reduced context overflow (focus on 5 core docs)
+- ✅ Single source of truth (no conflicting information)
+- ✅ Easier navigation (clear structure)
+- ✅ Faster updates (update core docs, not duplicates)
+- ✅ Strategic approach (learn from proven patterns)
+
+---
+
+**Last Updated:** January 9, 2026

@@ -1,0 +1,365 @@
+{
+  "name": "13_instagram_comment_trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "instagram-comments",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Instagram Comment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "instagram-comment-trigger",
+      "notes": "Meta Instagram Graph API webhook for comments. Configure in Meta App Dashboard → Instagram → Webhooks. Subscribe to: comments, mentions."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "headers",
+              "name": "headers",
+              "value": "={{$json.headers || {}}}",
+              "type": "object"
+            },
+            {
+              "id": "raw_body",
+              "name": "raw_body",
+              "value": "={{JSON.stringify($json)}}",
+              "type": "string"
+            },
+            {
+              "id": "tenant_id",
+              "name": "tenant_id",
+              "value": "={{$json.query?.tenant_id || 'test_trader_001'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-headers",
+      "name": "Extract Headers & Tenant ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Extract headers for signature verification and tenant_id from query params"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Meta Instagram Webhook Signature Verification\n// Production security: Verify webhook signature to prevent unauthorized requests\n// Reference: Meta Instagram Graph API security requirements\n// Format: X-Hub-Signature-256: sha256=<hash>\n\nconst crypto = require('crypto');\nconst input = $input.item.json;\nconst headers = input.headers || {};\nconst rawBody = input.raw_body || JSON.stringify(input);\n\n// Meta sends signature in X-Hub-Signature-256 header with format: sha256=<hash>\nconst signatureHeader = headers['X-Hub-Signature-256'] \n  || headers['x-hub-signature-256']\n  || headers['X-Hub-Signature']\n  || headers['x-hub-signature'];\n\n// Extract hash from 'sha256=<hash>' format\nlet receivedSignature = null;\nif (signatureHeader) {\n  const match = signatureHeader.match(/sha256=(.+)/i);\n  if (match) {\n    receivedSignature = match[1];\n  } else {\n    receivedSignature = signatureHeader;\n  }\n}\n\n// Use Meta App Secret (same as WhatsApp - unified Meta Business API)\nconst appSecret = process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;\n\nif (!receivedSignature) {\n  // In development, allow webhooks without signature (for testing)\n  if (process.env.NODE_ENV === 'development' || process.env.ALLOW_UNSIGNED_WEBHOOKS === 'true') {\n    return {\n      valid: true,\n      signature_verified: false,\n      warning: 'Webhook signature not verified (development mode)',\n      ...input\n    };\n  }\n  \n  return {\n    valid: false,\n    error: 'Missing X-Hub-Signature-256 header',\n    statusCode: 401,\n    security_event: 'missing_signature'\n  };\n}\n\nif (!appSecret) {\n  return {\n    valid: false,\n    error: 'WHATSAPP_APP_SECRET or META_APP_SECRET not configured',\n    statusCode: 500,\n    security_event: 'config_error'\n  };\n}\n\n// Meta signature: HMAC-SHA256(payload, app_secret) in hex format\nconst payloadString = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n\nconst expectedSignature = crypto\n  .createHmac('sha256', appSecret)\n  .update(payloadString)\n  .digest('hex');\n\n// Constant-time comparison (prevent timing attacks)\nlet isValid = false;\ntry {\n  isValid = crypto.timingSafeEqual(\n    Buffer.from(receivedSignature, 'hex'),\n    Buffer.from(expectedSignature, 'hex')\n  );\n} catch (e) {\n  isValid = false;\n}\n\nif (!isValid) {\n  return {\n    valid: false,\n    error: 'Invalid Meta Instagram signature',\n    statusCode: 401,\n    security_event: 'invalid_signature'\n  };\n}\n\nreturn {\n  valid: true,\n  signature_verified: true,\n  ...input\n};"
+      },
+      "id": "verify-signature",
+      "name": "Verify Meta Instagram Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Production security: Verify Meta Instagram webhook signature (X-Hub-Signature-256). Reject if invalid (401)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "signature-valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-signature",
+      "name": "Check Signature Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{$json.statusCode || 401}}",
+        "responseBody": "={{ { error: $json.error, security_event: $json.security_event } }}",
+        "options": {}
+      },
+      "id": "return-signature-error",
+      "name": "Return Signature Error (401)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1050, 400],
+      "notes": "Return 401 if signature invalid (security requirement)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Instagram Comment Webhook Payload\n// Meta Instagram Graph API webhook format\n// Reference: https://developers.facebook.com/docs/instagram-api/guides/webhooks\n\nconst payload = $input.item.json;\nconst entry = payload.entry || [];\n\nif (entry.length === 0) {\n  return {\n    error: 'No entry in webhook payload',\n    valid: false\n  };\n}\n\nconst firstEntry = entry[0];\nconst changes = firstEntry.changes || [];\n\nif (changes.length === 0) {\n  return {\n    error: 'No changes in webhook payload',\n    valid: false\n  };\n}\n\nconst change = changes[0];\nconst value = change.value || {};\n\n// Extract comment data\nconst commentId = value.id || value.comment_id;\nconst commentText = value.text || '';\nconst mediaId = value.media?.id || value.media_id;\nconst mediaPermalink = value.media?.permalink || '';\nconst userId = value.from?.id || value.user_id;\nconst username = value.from?.username || '';\nconst timestamp = value.timestamp || Math.floor(Date.now() / 1000);\n\n// Extract page/account ID\nconst pageId = firstEntry.id || payload.object_id;\n\nreturn {\n  valid: true,\n  comment_id: commentId,\n  comment_text: commentText,\n  media_id: mediaId,\n  media_permalink: mediaPermalink,\n  instagram_user_id: userId,\n  instagram_username: username,\n  page_id: pageId,\n  timestamp: timestamp,\n  tenant_id: payload.tenant_id\n};"
+      },
+      "id": "parse-comment",
+      "name": "Parse Instagram Comment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 200],
+      "notes": "Parse Instagram comment webhook payload. Extract: comment_id, comment_text, media_id, user_id, username."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keyword Detection: Identify lead intent from comment\n// Keywords: DM, Price, YES, Interested, Want, Buy\n// Supports English, Swahili, Sheng\n\nconst commentText = ($input.item.json.comment_text || '').toLowerCase();\n\n// Lead intent keywords (English, Swahili, Sheng)\nconst leadKeywords = [\n  'dm', 'direct message', 'message me',\n  'price', 'cost', 'how much', 'bei', 'pesa',\n  'yes', 'interested', 'want', 'taka', 'nataka',\n  'buy', 'purchase', 'nunua', 'order', 'oda',\n  'info', 'information', 'more', 'zaidi'\n];\n\n// Check if comment contains lead keywords\nconst hasLeadIntent = leadKeywords.some(keyword => \n  commentText.includes(keyword)\n);\n\n// Determine lead quality (high, medium, low)\nlet leadQuality = 'low';\nif (['dm', 'price', 'yes', 'interested', 'buy'].some(k => commentText.includes(k))) {\n  leadQuality = 'high';\n} else if (['info', 'more', 'want'].some(k => commentText.includes(k))) {\n  leadQuality = 'medium';\n}\n\nreturn {\n  ...$input.item.json,\n  has_lead_intent: hasLeadIntent,\n  lead_quality: leadQuality\n};"
+      },
+      "id": "detect-keywords",
+      "name": "Detect Lead Keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200],
+      "notes": "Detect lead intent keywords: DM, Price, YES, Interested, Buy. Supports English, Swahili, Sheng."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-lead-intent",
+              "leftValue": "={{$json.has_lead_intent}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-lead-intent",
+      "name": "Check Lead Intent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { message: 'Comment processed but no lead intent detected', comment_id: $json.comment_id } }}",
+        "options": {}
+      },
+      "id": "return-no-intent",
+      "name": "Return No Intent (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 300],
+      "notes": "Return 200 if no lead intent (comment logged but no action taken)"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v18.0/{{$json.instagram_user_id}}?fields=id,username,biography&access_token={{$env.INSTAGRAM_ACCESS_TOKEN || $env.META_ACCESS_TOKEN}}",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "fetch-user-bio",
+      "name": "Fetch Instagram User Bio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 100],
+      "notes": "Fetch Instagram user bio to extract phone number. Uses Instagram Graph API: GET /{user_id}?fields=biography"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Phone Number from Instagram Bio\n// Kenyan phone patterns: +254, 07, 254\n// Reference: Kenya phone number formats\n\nconst userData = $('Fetch Instagram User Bio').first()?.json || {};\nconst bio = (userData.biography || '').toLowerCase();\nconst commentData = $input.item.json;\n\n// Kenyan phone number regex patterns\nconst phonePatterns = [\n  /\\+254\\d{9}/g,           // +254712345678\n  /254\\d{9}/g,            // 254712345678\n  /07\\d{8}/g,             // 0712345678\n  /\\+254\\s?\\d{3}\\s?\\d{3}\\s?\\d{3}/g,  // +254 712 345 678\n  /0\\d{2}\\s?\\d{3}\\s?\\d{3}/g          // 071 234 5678\n];\n\nlet extractedPhone = null;\n\n// Try to extract phone from bio\nfor (const pattern of phonePatterns) {\n  const matches = bio.match(pattern);\n  if (matches && matches.length > 0) {\n    // Take first match and normalize\n    let phone = matches[0].replace(/\\s+/g, '');\n    \n    // Normalize to +254 format\n    if (phone.startsWith('07')) {\n      phone = '+254' + phone.substring(1);\n    } else if (phone.startsWith('254') && !phone.startsWith('+254')) {\n      phone = '+' + phone;\n    } else if (!phone.startsWith('+')) {\n      phone = '+254' + phone;\n    }\n    \n    extractedPhone = phone;\n    break;\n  }\n}\n\n// If no phone in bio, check comment text\nif (!extractedPhone) {\n  const commentText = (commentData.comment_text || '').toLowerCase();\n  for (const pattern of phonePatterns) {\n    const matches = commentText.match(pattern);\n    if (matches && matches.length > 0) {\n      let phone = matches[0].replace(/\\s+/g, '');\n      if (phone.startsWith('07')) {\n        phone = '+254' + phone.substring(1);\n      } else if (phone.startsWith('254') && !phone.startsWith('+254')) {\n        phone = '+' + phone;\n      }\n      extractedPhone = phone;\n      break;\n    }\n  }\n}\n\nreturn {\n  ...commentData,\n  instagram_username: userData.username || commentData.instagram_username,\n  bio: userData.biography || '',\n  phone: extractedPhone,\n  phone_extracted: extractedPhone !== null\n};"
+      },
+      "id": "extract-phone",
+      "name": "Extract Phone from Bio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 100],
+      "notes": "Extract phone number from Instagram bio using Kenyan phone patterns. Normalize to +254 format."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/leads",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"source\": \"instagram\",\n  \"source_detail\": \"instagram_comment\",\n  \"instagram_user_id\": \"{{$json.instagram_user_id}}\",\n  \"instagram_username\": \"{{$json.instagram_username}}\",\n  \"reel_id\": \"{{$json.media_id}}\",\n  \"reel_permalink\": \"{{$json.media_permalink}}\",\n  \"comment_id\": \"{{$json.comment_id}}\",\n  \"comment_text\": \"{{$json.comment_text}}\",\n  \"phone\": \"{{$json.phone}}\",\n  \"status\": \"new\",\n  \"metadata\": {\n    \"lead_quality\": \"{{$json.lead_quality}}\",\n    \"phone_extracted\": {{$json.phone_extracted}},\n    \"bio\": \"{{$json.bio}}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "create-lead",
+      "name": "Create Lead Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 100],
+      "notes": "Create lead record in Supabase leads table. Links Instagram comment to lead for attribution."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-phone",
+              "leftValue": "={{$json.phone}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-phone",
+      "name": "Check Phone Extracted",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 100]
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "source": "={{$json}}",
+        "options": {}
+      },
+      "id": "trigger-whatsapp",
+      "name": "Trigger WhatsApp Auto-DM",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2050, 50],
+      "notes": "Trigger WhatsApp catalog message workflow. Passes lead data (phone, tenant_id) to send catalog message."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { message: 'Lead created but no phone number found. Manual follow-up required.', lead_id: $json.id } }}",
+        "options": {}
+      },
+      "id": "return-no-phone",
+      "name": "Return No Phone (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2050, 150],
+      "notes": "Return 200 if lead created but no phone (requires manual follow-up)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { message: 'Lead created and WhatsApp DM sent', lead_id: $('Create Lead Record').first().json.id, phone: $('Extract Phone from Bio').first().json.phone } }}",
+        "options": {}
+      },
+      "id": "return-success",
+      "name": "Return Success (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2250, 50],
+      "notes": "Return 200 if lead created and WhatsApp DM sent successfully"
+    }
+  ],
+  "connections": {
+    "Instagram Comment Webhook": {
+      "main": [[{"node": "Extract Headers & Tenant ID", "type": "main", "index": 0}]]
+    },
+    "Extract Headers & Tenant ID": {
+      "main": [[{"node": "Verify Meta Instagram Signature", "type": "main", "index": 0}]]
+    },
+    "Verify Meta Instagram Signature": {
+      "main": [[{"node": "Check Signature Valid", "type": "main", "index": 0}]]
+    },
+    "Check Signature Valid": {
+      "main": [
+        [{"node": "Parse Instagram Comment", "type": "main", "index": 0}],
+        [{"node": "Return Signature Error (401)", "type": "main", "index": 0}]
+      ]
+    },
+    "Parse Instagram Comment": {
+      "main": [[{"node": "Detect Lead Keywords", "type": "main", "index": 0}]]
+    },
+    "Detect Lead Keywords": {
+      "main": [[{"node": "Check Lead Intent", "type": "main", "index": 0}]]
+    },
+    "Check Lead Intent": {
+      "main": [
+        [{"node": "Fetch Instagram User Bio", "type": "main", "index": 0}],
+        [{"node": "Return No Intent (200)", "type": "main", "index": 0}]
+      ]
+    },
+    "Fetch Instagram User Bio": {
+      "main": [[{"node": "Extract Phone from Bio", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Extract Phone from Bio", "type": "main", "index": 0}]]
+    },
+    "Extract Phone from Bio": {
+      "main": [[{"node": "Create Lead Record", "type": "main", "index": 0}]]
+    },
+    "Create Lead Record": {
+      "main": [[{"node": "Check Phone Extracted", "type": "main", "index": 0}]]
+    },
+    "Check Phone Extracted": {
+      "main": [
+        [{"node": "Trigger WhatsApp Auto-DM", "type": "main", "index": 0}],
+        [{"node": "Return No Phone (200)", "type": "main", "index": 0}]
+      ]
+    },
+    "Trigger WhatsApp Auto-DM": {
+      "main": [[{"node": "Return Success (200)", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "✅ WEEK 1 CORE ENGINE: Instagram Comment → Lead → WhatsApp Auto-DM\n\n✅ SECURITY: Meta Instagram webhook signature verification (X-Hub-Signature-256)\n✅ KEYWORD DETECTION: DM, Price, YES, Interested, Buy (English, Swahili, Sheng)\n✅ PHONE EXTRACTION: From Instagram bio using Kenyan phone patterns (+254, 07, 254)\n✅ LEAD CREATION: Creates lead record in Supabase with attribution data\n✅ WHATSAPP HANDOFF: Triggers WhatsApp catalog workflow if phone found\n\nReference: docs/core/NAIROBI_SUPER_SUITE_EXPANSION.md\nAPI: https://developers.facebook.com/docs/instagram-api/guides/webhooks"
+}
+

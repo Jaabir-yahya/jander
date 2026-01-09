@@ -1,6 +1,8 @@
 # Nairobi WhatsApp Commerce - Cursor AI Rules (2026 Solo Dev)
 
 ## ALWAYS REFERENCE THESE FILES
+docs/core/verified-research-findings.md  # 🔒 LOCKED SPEC - Research-backed architecture (single source of truth)
+docs/core/WhatsApp_Commerce_Technical_KB.md  # ⭐ PRIMARY TECHNICAL CONTEXT (all integrations, APIs, patterns)
 docs/core/ARCHITECTURE.md
 docs/core/WORKFLOWS.md  
 docs/core/BUILD_PLAN.md

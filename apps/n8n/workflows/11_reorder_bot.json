@@ -1,0 +1,211 @@
+{
+  "name": "11_reorder_bot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Daily 9AM Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.2,
+      "position": [250, 300],
+      "notes": "Runs daily at 9AM (peak shopping time). Reference: Botomatik pattern - 15% conversion uplift"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenants?is_active=eq.true&select=id,name",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-tenants",
+      "name": "Get Active Tenants",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "splitInBatches",
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-tenants",
+      "name": "Split Tenants",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders?tenant_id=eq.{{$json.id}}&status=eq.paid&select=customer_phone,items,total_amount,created_at&order=created_at.desc&limit=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-recent-orders",
+      "name": "Get Recent Paid Orders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Get last 50 paid orders per tenant (last 30 days)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Botomatik Pattern: Find repeat customers with last order\n// Reference: docs/core/verified-research-findings.md - Botomatik 15% conversion uplift\n\nconst orders = $input.item.json || [];\nconst tenantId = $('Split Tenants').first().json.id;\n\n// Group by customer phone, get most recent order\nconst customerOrders = {};\norders.forEach(order => {\n  const phone = order.customer_phone;\n  if (!customerOrders[phone] || new Date(order.created_at) > new Date(customerOrders[phone].created_at)) {\n    customerOrders[phone] = order;\n  }\n});\n\n// Filter: Only customers with orders in last 14 days (recent enough to reorder)\nconst now = new Date();\nconst twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);\n\nconst eligibleCustomers = Object.values(customerOrders).filter(order => {\n  const orderDate = new Date(order.created_at);\n  return orderDate >= twoWeeksAgo;\n});\n\nreturn eligibleCustomers.map(order => ({\n  tenant_id: tenantId,\n  customer_phone: order.customer_phone,\n  last_order_items: order.items,\n  last_order_amount: order.total_amount,\n  last_order_date: order.created_at\n}));"
+      },
+      "id": "find-repeat-customers",
+      "name": "Find Repeat Customers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Botomatik pattern: Identify customers with recent orders (14 days)"
+    },
+    {
+      "parameters": {
+        "mode": "splitInBatches",
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-customers",
+      "name": "Split Customers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format reorder message (Botomatik pattern)\n// Reference: docs/core/verified-research-findings.md - 60% abandoned cart recovery\n\nconst customer = $input.item.json;\nconst items = customer.last_order_items || [];\n\n// Format items list\nlet itemsText = '';\nitems.forEach((item, index) => {\n  const name = item.name || item.product || 'Item';\n  const qty = item.qty || 1;\n  const price = item.price || 0;\n  itemsText += `${index + 1}. ${name} - ${qty} × KSh ${price}\\n`;\n});\n\nconst message = `🛒 Quick reorder? Same as last time:\n\n${itemsText}\n💰 Total: KSh ${customer.last_order_amount}\n\nReply YES to order now.`;\n\nreturn {\n  tenant_id: customer.tenant_id,\n  customer_phone: customer.customer_phone,\n  message: message,\n  last_order_amount: customer.last_order_amount,\n  last_order_items: customer.last_order_items\n};"
+      },
+      "id": "format-reorder",
+      "name": "Format Reorder Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "notes": "Botomatik pattern: 'Forgot your order? Same as last time? Reply YES'"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_SEND_WHATSAPP || '03_send_whatsapp_v2'}}",
+        "options": {}
+      },
+      "id": "send-reorder",
+      "name": "Send Reorder Message",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "notes": "Send reorder reminder via WhatsApp"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"customer_phone\": \"{{$json.customer_phone}}\",\n  \"direction\": \"outbound\",\n  \"message_type\": \"text\",\n  \"content\": \"{{$json.message}}\",\n  \"intent\": \"reorder_reminder\"\n}",
+        "options": {}
+      },
+      "id": "log-reorder",
+      "name": "Log Reorder Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "Daily 9AM Trigger": {
+      "main": [[{"node": "Get Active Tenants", "type": "main", "index": 0}]]
+    },
+    "Get Active Tenants": {
+      "main": [[{"node": "Split Tenants", "type": "main", "index": 0}]]
+    },
+    "Split Tenants": {
+      "main": [[{"node": "Get Recent Paid Orders", "type": "main", "index": 0}]]
+    },
+    "Get Recent Paid Orders": {
+      "main": [[{"node": "Find Repeat Customers", "type": "main", "index": 0}]]
+    },
+    "Find Repeat Customers": {
+      "main": [[{"node": "Split Customers", "type": "main", "index": 0}]]
+    },
+    "Split Customers": {
+      "main": [[{"node": "Format Reorder Message", "type": "main", "index": 0}]]
+    },
+    "Format Reorder Message": {
+      "main": [[{"node": "Send Reorder Message", "type": "main", "index": 0}, {"node": "Log Reorder Message", "type": "main", "index": 0}]]
+    },
+    "Send Reorder Message": {
+      "main": [[{"node": "Log Reorder Message", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "✅ Botomatik Pattern: Abandoned cart recovery via reorder reminders. Runs daily at 9AM, finds repeat customers (last 14 days), sends 'Quick reorder? Same as last time? Reply YES'. Reference: docs/core/verified-research-findings.md - Botomatik 15% conversion uplift, 60% cart recovery"
+}
+

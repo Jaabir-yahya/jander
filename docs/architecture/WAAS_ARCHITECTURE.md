@@ -787,10 +787,11 @@ Is it user interface (buttons, templates, flows)?
 
 ## References
 
+- **Architecture Principles**: [`ARCHITECTURE_PRINCIPLES.md`](../core/ARCHITECTURE_PRINCIPLES.md) - ⭐ **Non-negotiables vs flexible areas** (decision framework)
 - **Trade Facilitator Architecture**: [`TRADE_FACILITATOR_ARCHITECTURE.md`](./architecture/TRADE_FACILITATOR_ARCHITECTURE.md)
 - **Integration Capabilities**: [`INTEGRATION_CAPABILITIES.md`](./INTEGRATION_CAPABILITIES.md)
-- **Build Plan**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) - Stage-gated execution plan
-- **Lifecycle Stages**: [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) - 5-stage maturity model
+- **Build Plan**: [`BUILD_PLAN.md`](../core/BUILD_PLAN.md) - Stage-gated execution plan
+- **Lifecycle Stages**: [`LIFECYCLE_STAGES.md`](../reference/LIFECYCLE_STAGES.md) - 5-stage maturity model
 
 ---
 

@@ -1,0 +1,273 @@
+{
+  "name": "18_emergency_mode_activate",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "emergency-mode",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Emergency Mode Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "emergency-mode-activate",
+      "notes": "Manual trigger via webhook or n8n UI. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "tenant_id",
+              "name": "tenant_id",
+              "value": "={{$json.body?.tenant_id || $json.query?.tenant_id || $json.params?.tenant_id}}",
+              "type": "string"
+            },
+            {
+              "id": "reason",
+              "name": "reason",
+              "value": "={{$json.body?.reason || $json.query?.reason || 'API failure'}}",
+              "type": "string"
+            },
+            {
+              "id": "fallback_mode",
+              "name": "fallback_mode",
+              "value": "={{$json.body?.fallback_mode || $json.query?.fallback_mode || 'sms'}}",
+              "type": "string"
+            },
+            {
+              "id": "paused_by",
+              "name": "paused_by",
+              "value": "={{$json.body?.paused_by || $json.query?.paused_by || 'system'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-params",
+      "name": "Extract Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Extract tenant_id, reason, fallback_mode, and paused_by from webhook"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_LOOKUP_TENANT || '00_lookup_tenant_config'}}",
+        "options": {}
+      },
+      "id": "lookup-tenant",
+      "name": "Lookup Tenant UUID",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "notes": "Resolve tenant_id to UUID using 00_lookup_tenant_config"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract UUID tenant_id from lookup result\nconst lookupResult = $input.item.json;\nconst params = $('Extract Parameters').first().json;\n\nif (!lookupResult.tenant_id) {\n  return {\n    valid: false,\n    error: 'Tenant lookup failed',\n    statusCode: 404\n  };\n}\n\nreturn {\n  tenant_id: lookupResult.tenant_id,  // UUID\n  tenant_id_input: params.tenant_id,  // Original input\n  reason: params.reason,\n  fallback_mode: params.fallback_mode,\n  paused_by: params.paused_by,\n  tenant_config: lookupResult\n};"
+      },
+      "id": "extract-tenant-uuid",
+      "name": "Extract Tenant UUID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenant_automation_control",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation,resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"automation_paused\": true,\n  \"pause_reason\": \"{{$json.reason}}\",\n  \"paused_at\": \"{{new Date().toISOString()}}\",\n  \"paused_by\": \"{{$json.paused_by}}\",\n  \"fallback_mode\": \"{{$json.fallback_mode}}\"\n}",
+        "options": {}
+      },
+      "id": "update-automation-control",
+      "name": "Update Automation Control",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "notes": "Pause automation for tenant. Uses UPSERT (merge-duplicates) to handle existing records"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenant_config?tenant_id=eq.{{$('Extract Tenant UUID').first().json.tenant_id}}&select=whatsapp_number,owner_phone",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-tenant-config",
+      "name": "Get Tenant Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300],
+      "notes": "Get tenant WhatsApp number and owner phone for notifications"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/support_cases",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$('Extract Tenant UUID').first().json.tenant_id}}\",\n  \"case_type\": \"api_down\",\n  \"priority\": \"high\",\n  \"status\": \"open\",\n  \"automated\": true,\n  \"description\": \"Automation paused: {{$('Extract Tenant UUID').first().json.reason}}. Fallback mode: {{$('Extract Tenant UUID').first().json.fallback_mode}}\",\n  \"assigned_to\": \"system\"\n}",
+        "options": {}
+      },
+      "id": "create-support-case",
+      "name": "Create Support Case",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300],
+      "notes": "Create support case for tracking. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/send_whatsapp_message",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_tenant_id\": \"{{$('Extract Tenant UUID').first().json.tenant_id}}\",\n  \"p_phone\": \"{{$json[0]?.owner_phone || $json.owner_phone}}\",\n  \"p_message\": \"⚠️ Automation Paused\\n\\nReason: {{$('Extract Tenant UUID').first().json.reason}}\\nFallback Mode: {{$('Extract Tenant UUID').first().json.fallback_mode}}\\n\\nYour system is now in safe mode. Orders will be handled via {{$('Extract Tenant UUID').first().json.fallback_mode}}.\"\"\n}",
+        "options": {}
+      },
+      "id": "notify-owner",
+      "name": "Notify Owner via WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 300],
+      "notes": "Send WhatsApp alert to owner. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { status: 'success', message: 'Emergency mode activated', tenant_id: $('Extract Tenant UUID').first().json.tenant_id, support_case_id: $json.id } }}",
+        "options": {}
+      },
+      "id": "return-success",
+      "name": "Return Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 300],
+      "notes": "Return success response"
+    }
+  ],
+  "connections": {
+    "Emergency Mode Trigger": {
+      "main": [[{"node": "Extract Parameters", "type": "main", "index": 0}]]
+    },
+    "Extract Parameters": {
+      "main": [[{"node": "Lookup Tenant UUID", "type": "main", "index": 0}]]
+    },
+    "Lookup Tenant UUID": {
+      "main": [[{"node": "Extract Tenant UUID", "type": "main", "index": 0}]]
+    },
+    "Extract Tenant UUID": {
+      "main": [[{"node": "Update Automation Control", "type": "main", "index": 0}]]
+    },
+    "Update Automation Control": {
+      "main": [[{"node": "Get Tenant Config", "type": "main", "index": 0}]]
+    },
+    "Get Tenant Config": {
+      "main": [[{"node": "Create Support Case", "type": "main", "index": 0}]]
+    },
+    "Create Support Case": {
+      "main": [[{"node": "Notify Owner via WhatsApp", "type": "main", "index": 0}]]
+    },
+    "Notify Owner via WhatsApp": {
+      "main": [[{"node": "Return Success", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Emergency Mode Activation: Pause automation for tenant, switch to fallback mode (SMS/manual), notify owner, create support case. Reference: docs/core/PRODUCTION_BLUEPRINT.md Step 2"
+}
+

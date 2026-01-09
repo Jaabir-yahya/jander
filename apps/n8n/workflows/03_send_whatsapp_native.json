@@ -125,7 +125,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages' : 'https://graph.facebook.com/v18.0/' + $env.PHONE_NUMBER_ID + '/messages'}}",
+        "url": "=https://graph.facebook.com/v18.0/{{$env.PHONE_NUMBER_ID}}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -133,7 +133,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.META_ACCESS_TOKEN}}"
+              "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN || $env.META_ACCESS_TOKEN}}"
             },
             {
               "name": "Content-Type",
@@ -188,7 +188,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages/' + $json.message_id : 'https://graph.facebook.com/v18.0/' + $json.messages[0].id}}",
+        "url": "=https://graph.facebook.com/v18.0/{{$json.message_id || $json.messages[0]?.id}}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -196,7 +196,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.META_ACCESS_TOKEN}}"
+              "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN || $env.META_ACCESS_TOKEN}}"
             }
           ]
         },
@@ -429,10 +429,10 @@
     "Delivery Received?": {
       "main": [
         [{"node": "Log Success (Native Supabase)", "type": "main", "index": 0}],
-        [{"node": "Check Fallback Allowed?", "type": "main", "index": 0}]
+        [{"node": "Fallback Allowed?", "type": "main", "index": 0}]
       ]
     },
-    "Check Fallback Allowed?": {
+    "Fallback Allowed?": {
       "main": [
         [{"node": "Trigger SMS Fallback", "type": "main", "index": 0}],
         [{"node": "Log Failure (Native Supabase)", "type": "main", "index": 0}]
@@ -450,4 +450,5 @@
   "versionId": "1",
   "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes instead of custom services. See docs/NATIVE_INTEGRATIONS.md"
 }
+
 

@@ -2,13 +2,22 @@
   "name": "05_log_message",
   "nodes": [
     {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger (For Testing)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [50, 300],
+      "notes": "⚠️ TESTING ONLY: This workflow is normally called by other workflows. Use this trigger for testing with sample data."
+    },
+    {
       "parameters": {
         "assignments": {
           "assignments": [
             {
               "id": "phone",
               "name": "phone",
-              "value": "={{$json.phone || $json.from}}",
+              "value": "={{$json.phone || $json.from || '+254700123456'}}",
               "type": "string"
             },
             {
@@ -254,6 +263,9 @@
     }
   ],
   "connections": {
+    "Manual Trigger (For Testing)": {
+      "main": [[{"node": "Extract Message Data", "type": "main", "index": 0}]]
+    },
     "Extract Message Data": {
       "main": [[{"node": "Insert Message Log", "type": "main", "index": 0}]]
     },
@@ -280,4 +292,5 @@
   "updatedAt": "2026-01-09T00:00:00.000Z",
   "versionId": "1"
 }
+
 
