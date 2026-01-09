@@ -1,0 +1,283 @@
+{
+  "name": "05_log_message",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{$json.phone || $json.from}}",
+              "type": "string"
+            },
+            {
+              "id": "channel",
+              "name": "channel",
+              "value": "={{$json.channel || 'whatsapp'}}",
+              "type": "string"
+            },
+            {
+              "id": "message_type",
+              "name": "message_type",
+              "value": "={{$json.message_type || 'unknown'}}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "={{$json.status || 'sent'}}",
+              "type": "string"
+            },
+            {
+              "id": "message_id",
+              "name": "message_id",
+              "value": "={{$json.message_id || $json.id}}",
+              "type": "string"
+            },
+            {
+              "id": "content_preview",
+              "name": "content_preview",
+              "value": "={{($json.message || $json.text || '').substring(0, 200)}}",
+              "type": "string"
+            },
+            {
+              "id": "cost_kes",
+              "name": "cost_kes",
+              "value": "={{$json.cost_kes || ($json.channel === 'whatsapp' && $json.template_name ? 0.75 : ($json.channel === 'sms' ? 1.00 : 0))}}",
+              "type": "number"
+            },
+            {
+              "id": "fallback_used",
+              "name": "fallback_used",
+              "value": "={{$json.fallback_used || false}}",
+              "type": "boolean"
+            },
+            {
+              "id": "fallback_reason",
+              "name": "fallback_reason",
+              "value": "={{$json.fallback_reason || null}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-data",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/message_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "channel",
+              "value": "={{$json.channel}}"
+            },
+            {
+              "name": "message_type",
+              "value": "={{$json.message_type}}"
+            },
+            {
+              "name": "status",
+              "value": "={{$json.status}}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{$json.message_id}}"
+            },
+            {
+              "name": "content_preview",
+              "value": "={{$json.content_preview}}"
+            },
+            {
+              "name": "cost_kes",
+              "value": "={{$json.cost_kes}}"
+            },
+            {
+              "name": "fallback_used",
+              "value": "={{$json.fallback_used}}"
+            },
+            {
+              "name": "fallback_reason",
+              "value": "={{$json.fallback_reason}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "insert-log",
+      "name": "Insert Message Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-failed",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-failed",
+      "name": "Status = Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/daily_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event_type",
+              "value": "=message_failed"
+            },
+            {
+              "name": "details",
+              "value": "=Message failed: {{$('Extract Message Data').first().json.channel}} to {{$('Extract Message Data').first().json.phone}}"
+            },
+            {
+              "name": "requires_review",
+              "value": "=true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-failure",
+      "name": "Log to Daily Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "message_log_id",
+              "name": "message_log_id",
+              "value": "={{$json[0].message_log_id}}",
+              "type": "string"
+            },
+            {
+              "id": "success",
+              "name": "success",
+              "value": "=true",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Extract Message Data": {
+      "main": [[{"node": "Insert Message Log", "type": "main", "index": 0}]]
+    },
+    "Insert Message Log": {
+      "main": [[{"node": "Status = Failed?", "type": "main", "index": 0}]]
+    },
+    "Status = Failed?": {
+      "main": [
+        [{"node": "Return Result", "type": "main", "index": 0}],
+        [{"node": "Log to Daily Logs", "type": "main", "index": 0}]
+      ]
+    },
+    "Log to Daily Logs": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1"
+}
+

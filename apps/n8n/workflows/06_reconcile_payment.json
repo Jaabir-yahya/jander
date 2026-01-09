@@ -1,0 +1,341 @@
+{
+  "name": "06_reconcile_payment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mpesa/stk-callback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "M-Pesa STK Callback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "mpesa-stk-callback"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract payment data from M-Pesa webhook\n// Architecture: See docs/WEBHOOK_SCHEMAS.md (M-Pesa STK Push Callback)\n\nconst payload = $input.item.json;\nconst stkCallback = payload.Body?.stkCallback;\n\nif (!stkCallback) {\n  return { error: 'Invalid webhook payload' };\n}\n\nif (stkCallback.ResultCode !== 0) {\n  // Payment failed or cancelled\n  return {\n    success: false,\n    result_code: stkCallback.ResultCode,\n    result_desc: stkCallback.ResultDesc,\n    checkout_request_id: stkCallback.CheckoutRequestID\n  };\n}\n\n// Extract payment details\nconst metadata = stkCallback.CallbackMetadata?.Item || [];\nconst amount = metadata.find(item => item.Name === 'Amount')?.Value;\nconst receiptNumber = metadata.find(item => item.Name === 'MpesaReceiptNumber')?.Value;\nconst phone = metadata.find(item => item.Name === 'PhoneNumber')?.Value;\nconst timestamp = metadata.find(item => item.Name === 'TransactionDate')?.Value;\n\nreturn {\n  success: true,\n  receipt_number: receiptNumber,\n  amount: amount / 100, // Convert cents to KSh\n  phone: phone ? `+${phone}` : null,\n  timestamp: timestamp ? new Date(timestamp).toISOString() : new Date().toISOString(),\n  checkout_request_id: stkCallback.CheckoutRequestID\n};"
+      },
+      "id": "extract-payment",
+      "name": "Extract Payment Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-success",
+              "leftValue": "={{$json.success}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-success",
+      "name": "Payment Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/trades?buyer_phone=eq.{{$json.phone}}&status=in.(pending,confirmed)&select=trade_id,buyer_phone,total_amount,status&order=created_at.desc&limit=5",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "query-orders",
+      "name": "Query Orders by Phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Match payment to order by amount (±50 KSh tolerance)\n// Architecture: See docs/WAAS_ARCHITECTURE.md (Payment Reconciliation)\n\nconst payment = $('Extract Payment Data').first().json;\nconst orders = $input.item.json || [];\n\n// Filter orders within amount tolerance\nconst tolerance = 50;\nconst matchingOrders = orders.filter(order => {\n  const orderAmount = parseFloat(order.total_amount || 0);\n  const paymentAmount = parseFloat(payment.amount || 0);\n  return Math.abs(orderAmount - paymentAmount) <= tolerance;\n});\n\nif (matchingOrders.length === 1) {\n  // One match - auto-confirm\n  return {\n    match_type: 'single',\n    trade_id: matchingOrders[0].trade_id,\n    order_amount: matchingOrders[0].total_amount,\n    payment_amount: payment.amount,\n    receipt_number: payment.receipt_number,\n    phone: payment.phone\n  };\n} else if (matchingOrders.length > 1) {\n  // Multiple matches - manual review\n  return {\n    match_type: 'multiple',\n    candidate_orders: matchingOrders.map(o => o.trade_id),\n    payment_amount: payment.amount,\n    receipt_number: payment.receipt_number,\n    phone: payment.phone,\n    requires_review: true\n  };\n} else {\n  // No match - orphan payment\n  return {\n    match_type: 'none',\n    payment_amount: payment.amount,\n    receipt_number: payment.receipt_number,\n    phone: payment.phone,\n    requires_review: true\n  };\n}"
+      },
+      "id": "match-payment",
+      "name": "Match Payment to Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-single",
+              "leftValue": "={{$json.match_type}}",
+              "rightValue": "single",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-match",
+      "name": "Single Match?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/trades?id=eq.{{$json.trade_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "=paid"
+            },
+            {
+              "name": "paid_at",
+              "value": "={{$('Extract Payment Data').first().json.timestamp}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-order",
+      "name": "Update Order Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/payments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "trade_id",
+              "value": "={{$('Match Payment to Order').first().json.trade_id}}"
+            },
+            {
+              "name": "amount_kes",
+              "value": "={{$('Extract Payment Data').first().json.amount}}"
+            },
+            {
+              "name": "mpesa_ref",
+              "value": "={{$('Extract Payment Data').first().json.receipt_number}}"
+            },
+            {
+              "name": "status",
+              "value": "=completed"
+            },
+            {
+              "name": "paid_at",
+              "value": "={{$('Extract Payment Data').first().json.timestamp}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-payment",
+      "name": "Create Payment Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/daily_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event_type",
+              "value": "={{$json.match_type === 'multiple' ? 'payment_mismatch' : 'orphan_payment'}}"
+            },
+            {
+              "name": "details",
+              "value": "={{JSON.stringify($json)}}"
+            },
+            {
+              "name": "requires_review",
+              "value": "=true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-mismatch",
+      "name": "Log Mismatch/Orphan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Payment processed' }) }}",
+        "options": {}
+      },
+      "id": "response",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 200]
+    }
+  ],
+  "connections": {
+    "M-Pesa STK Callback": {
+      "main": [[{"node": "Extract Payment Data", "type": "main", "index": 0}]]
+    },
+    "Extract Payment Data": {
+      "main": [[{"node": "Payment Success?", "type": "main", "index": 0}]]
+    },
+    "Payment Success?": {
+      "main": [
+        [{"node": "Query Orders by Phone", "type": "main", "index": 0}],
+        [{"node": "Return Response", "type": "main", "index": 0}]
+      ]
+    },
+    "Query Orders by Phone": {
+      "main": [[{"node": "Match Payment to Order", "type": "main", "index": 0}]]
+    },
+    "Match Payment to Order": {
+      "main": [[{"node": "Single Match?", "type": "main", "index": 0}]]
+    },
+    "Single Match?": {
+      "main": [
+        [{"node": "Update Order Status", "type": "main", "index": 0}, {"node": "Create Payment Record", "type": "main", "index": 0}],
+        [{"node": "Log Mismatch/Orphan", "type": "main", "index": 0}]
+      ]
+    },
+    "Update Order Status": {
+      "main": [[{"node": "Return Response", "type": "main", "index": 0}]]
+    },
+    "Create Payment Record": {
+      "main": [[{"node": "Return Response", "type": "main", "index": 0}]]
+    },
+    "Log Mismatch/Orphan": {
+      "main": [[{"node": "Return Response", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1"
+}
+
