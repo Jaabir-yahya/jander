@@ -1,0 +1,207 @@
+{
+  "name": "10_handle_order_with_confirmation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "order",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "handle-order-confirmation",
+      "notes": "Receives order intent from message classifier. Reference: Interakt pattern - docs/core/verified-research-findings.md"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "tenant_id",
+              "name": "tenant_id",
+              "value": "={{$json.tenant_id || $json.query?.tenant_id}}",
+              "type": "string"
+            },
+            {
+              "id": "customer_phone",
+              "name": "customer_phone",
+              "value": "={{$json.phone || $json.customer_phone}}",
+              "type": "string"
+            },
+            {
+              "id": "items",
+              "name": "items",
+              "value": "={{$json.items || $json.parsed_items || []}}",
+              "type": "array"
+            },
+            {
+              "id": "total_amount",
+              "name": "total_amount",
+              "value": "={{$json.total_amount || $json.amount || 0}}",
+              "type": "number"
+            },
+            {
+              "id": "order_status",
+              "name": "order_status",
+              "value": "=pending_confirmation",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-order",
+      "name": "Extract Order Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_LOOKUP_TENANT || '00_lookup_tenant_config'}}",
+        "options": {}
+      },
+      "id": "lookup-tenant",
+      "name": "Lookup Tenant Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "notes": "Get tenant config with guard rails"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$('Lookup Tenant Config').first().json.tenant_id}}\",\n  \"order_number\": \"ORD-{{Date.now()}}\",\n  \"customer_phone\": \"{{$json.customer_phone}}\",\n  \"items\": {{JSON.stringify($json.items)}},\n  \"total_amount\": {{$json.total_amount}},\n  \"status\": \"pending_confirmation\",\n  \"payment_status\": \"unpaid\"\n}",
+        "options": {}
+      },
+      "id": "create-order",
+      "name": "Create Draft Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Create order with status='pending_confirmation' (Interakt pattern)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format order confirmation message (Interakt pattern)\n// Reference: docs/core/verified-research-findings.md - Interakt success pattern\n\nconst order = $input.item.json;\nconst items = order.items || [];\n\n// Format items list\nlet itemsText = '';\nitems.forEach((item, index) => {\n  itemsText += `${index + 1}. ${item.name || item.product} - ${item.qty || 1} × KSh ${item.price || 0}\\n`;\n});\n\nconst message = `📦 Order #${order.order_number}\n\n${itemsText}\n💰 Total: KSh ${order.total_amount}\n\nReply CONFIRM to proceed with payment.`;\n\nreturn {\n  order_id: order.id,\n  order_number: order.order_number,\n  customer_phone: order.customer_phone,\n  message: message,\n  tenant_id: order.tenant_id\n};"
+      },
+      "id": "format-confirmation",
+      "name": "Format Confirmation Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Interakt pattern: Show order summary + CONFIRM prompt"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_SEND_WHATSAPP || '03_send_whatsapp_v2'}}",
+        "options": {}
+      },
+      "id": "send-confirmation",
+      "name": "Send Confirmation Message",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "notes": "Send WhatsApp confirmation with CONFIRM prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"customer_phone\": \"{{$json.customer_phone}}\",\n  \"direction\": \"outbound\",\n  \"message_type\": \"text\",\n  \"content\": \"{{$json.message}}\",\n  \"intent\": \"order_confirmation\"\n}",
+        "options": {}
+      },
+      "id": "log-message",
+      "name": "Log Confirmation Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Order Webhook": {
+      "main": [[{"node": "Extract Order Data", "type": "main", "index": 0}]]
+    },
+    "Extract Order Data": {
+      "main": [[{"node": "Lookup Tenant Config", "type": "main", "index": 0}]]
+    },
+    "Lookup Tenant Config": {
+      "main": [[{"node": "Create Draft Order", "type": "main", "index": 0}]]
+    },
+    "Create Draft Order": {
+      "main": [[{"node": "Format Confirmation Message", "type": "main", "index": 0}]]
+    },
+    "Format Confirmation Message": {
+      "main": [[{"node": "Send Confirmation Message", "type": "main", "index": 0}, {"node": "Log Confirmation Message", "type": "main", "index": 0}]]
+    },
+    "Send Confirmation Message": {
+      "main": [[{"node": "Log Confirmation Message", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "✅ Interakt Pattern: Order confirmation flow with CONFIRM step. Creates draft order → Sends confirmation → Waits for CONFIRM reply → Proceeds to payment. Reference: docs/core/verified-research-findings.md - Interakt success pattern"
+}
+

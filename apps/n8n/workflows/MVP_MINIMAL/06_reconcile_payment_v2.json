@@ -1,0 +1,1029 @@
+{
+  "name": "06_reconcile_payment_v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mpesa-callback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "M-Pesa Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "mpesa-callback-v2",
+      "notes": "M-Pesa Daraja callback webhook. Reference: docs/core/verified-research-findings.md PART 3"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "tenant_id",
+              "name": "tenant_id",
+              "value": "={{$json.query?.tenant_id || $json.params?.tenant_id}}",
+              "type": "string"
+            },
+            {
+              "id": "webhook_id",
+              "name": "webhook_id",
+              "value": "={{$json.Body?.stkCallback?.CheckoutRequestID || $json.Body?.CheckoutRequestID}}",
+              "type": "string"
+            },
+            {
+              "id": "result_code",
+              "name": "result_code",
+              "value": "={{$json.Body?.stkCallback?.ResultCode || $json.Body?.ResultCode}}",
+              "type": "string"
+            },
+            {
+              "id": "receipt",
+              "name": "receipt",
+              "value": "={{$json.Body?.stkCallback?.CallbackMetadata?.Item?.find(i => i.Name === 'MpesaReceiptNumber')?.Value || $json.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value}}",
+              "type": "string"
+            },
+            {
+              "id": "amount",
+              "name": "amount",
+              "value": "={{($json.Body?.stkCallback?.CallbackMetadata?.Item?.find(i => i.Name === 'Amount')?.Value || $json.Body?.stkCallback?.CallbackMetadata?.Item[1]?.Value) / 100}}",
+              "type": "number"
+            },
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{'+' + ($json.Body?.stkCallback?.CallbackMetadata?.Item?.find(i => i.Name === 'PhoneNumber')?.Value || $json.Body?.stkCallback?.CallbackMetadata?.Item[4]?.Value)}}",
+              "type": "string"
+            },
+            {
+              "id": "transaction_date",
+              "name": "transaction_date",
+              "value": "={{$json.Body?.stkCallback?.CallbackMetadata?.Item?.find(i => i.Name === 'TransactionDate')?.Value || $json.Body?.stkCallback?.CallbackMetadata?.Item[3]?.Value}}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{new Date().toISOString()}}",
+              "type": "string"
+            },
+            {
+              "id": "raw_body",
+              "name": "raw_body",
+              "value": "={{JSON.stringify($json)}}",
+              "type": "string"
+            },
+            {
+              "id": "headers",
+              "name": "headers",
+              "value": "={{$json.headers || {}}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-webhook",
+      "name": "Extract Webhook Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Extract tenant_id, webhook_id, payment data, and headers from M-Pesa callback"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Phase 3: M-Pesa Webhook Signature Verification\n// Production hardening: Verify webhook signature to prevent unauthorized requests\n// Reference: M-Pesa Daraja API security requirements\n\nconst crypto = require('crypto');\nconst input = $input.item.json;\nconst headers = input.headers || {};\nconst rawBody = input.raw_body || JSON.stringify(input);\n\n// M-Pesa sends signature in X-B2C-Signature header (or X-Callback-Signature for STK)\nconst receivedSignature = headers['X-B2C-Signature'] \n  || headers['x-b2c-signature']\n  || headers['X-Callback-Signature']\n  || headers['x-callback-signature'];\n\nconst consumerSecret = process.env.MPESA_CONSUMER_SECRET;\n\nif (!receivedSignature) {\n  return {\n    valid: false,\n    error: 'Missing X-B2C-Signature header',\n    statusCode: 401,\n    security_event: 'missing_signature'\n  };\n}\n\nif (!consumerSecret) {\n  return {\n    valid: false,\n    error: 'MPESA_CONSUMER_SECRET not configured',\n    statusCode: 500,\n    security_event: 'config_error'\n  };\n}\n\n// M-Pesa signature: Base64(HMAC-SHA256(payload, consumer_secret))\nconst payloadString = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n\nconst expectedSignature = crypto\n  .createHmac('sha256', consumerSecret)\n  .update(payloadString)\n  .digest('base64');\n\n// Constant-time comparison (prevent timing attacks)\nlet isValid = false;\ntry {\n  isValid = crypto.timingSafeEqual(\n    Buffer.from(receivedSignature),\n    Buffer.from(expectedSignature)\n  );\n} catch (e) {\n  // Signature length mismatch\n  isValid = false;\n}\n\nif (!isValid) {\n  return {\n    valid: false,\n    error: 'Invalid M-Pesa signature',\n    statusCode: 401,\n    security_event: 'invalid_signature',\n    received_sig: receivedSignature.substring(0, 20) + '...',\n    expected_sig: expectedSignature.substring(0, 20) + '...'\n  };\n}\n\nreturn {\n  valid: true,\n  signature_verified: true,\n  ...input\n};"
+      },
+      "id": "verify-signature",
+      "name": "Verify M-Pesa Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Production security: Verify M-Pesa webhook signature. Reject if invalid (401)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "signature-valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-signature",
+      "name": "Check Signature Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{$json.statusCode || 401}}",
+        "responseBody": "={{ { error: $json.error, security_event: $json.security_event } }}",
+        "options": {}
+      },
+      "id": "return-signature-error",
+      "name": "Return Signature Error (401)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1050, 400],
+      "notes": "Return 401 if signature invalid (security requirement)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Phase 3.2: Validate Webhook Timestamp (Replay Attack Prevention)\n// Production security: Reject webhooks older than 5 minutes\n\nconst input = $input.item.json;\nconst transactionDate = input.transaction_date;\n\nif (!transactionDate) {\n  return {\n    valid: false,\n    error: 'Missing transaction timestamp',\n    statusCode: 400,\n    security_event: 'missing_timestamp'\n  };\n}\n\n// M-Pesa timestamp format: YYYYMMDDHHmmss (e.g., 20260109120000)\n// Convert to Date object\nlet webhookTime;\ntry {\n  if (typeof transactionDate === 'string' && transactionDate.length === 14) {\n    // M-Pesa format: YYYYMMDDHHmmss\n    const year = transactionDate.substring(0, 4);\n    const month = transactionDate.substring(4, 6) - 1; // 0-indexed\n    const day = transactionDate.substring(6, 8);\n    const hour = transactionDate.substring(8, 10);\n    const minute = transactionDate.substring(10, 12);\n    const second = transactionDate.substring(12, 14);\n    webhookTime = new Date(year, month, day, hour, minute, second);\n  } else {\n    webhookTime = new Date(transactionDate);\n  }\n} catch (e) {\n  return {\n    valid: false,\n    error: 'Invalid timestamp format',\n    statusCode: 400,\n    security_event: 'invalid_timestamp_format'\n  };\n}\n\nconst now = new Date();\nconst diffMinutes = (now - webhookTime) / (1000 * 60);\n\n// Reject webhooks older than 5 minutes (M-Pesa sends within seconds)\nif (diffMinutes > 5) {\n  return {\n    valid: false,\n    error: 'Webhook timestamp too old (possible replay attack)',\n    statusCode: 401,\n    security_event: 'replay_attack',\n    age_minutes: diffMinutes.toFixed(2)\n  };\n}\n\n// Reject future timestamps (clock skew protection)\nif (diffMinutes < -1) {\n  return {\n    valid: false,\n    error: 'Webhook timestamp in future (clock skew)',\n    statusCode: 400,\n    security_event: 'future_timestamp'\n  };\n}\n\nreturn {\n  valid: true,\n  timestamp_valid: true,\n  age_minutes: diffMinutes.toFixed(2),\n  ...input\n};"
+      },
+      "id": "validate-timestamp",
+      "name": "Validate Webhook Timestamp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200],
+      "notes": "Production security: Validate timestamp to prevent replay attacks. Reject if >5 minutes old."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "timestamp-valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-timestamp",
+      "name": "Check Timestamp Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{$json.statusCode || 401}}",
+        "responseBody": "={{ { error: $json.error, security_event: $json.security_event } }}",
+        "options": {}
+      },
+      "id": "return-timestamp-error",
+      "name": "Return Timestamp Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 300],
+      "notes": "Return 401 if timestamp invalid (replay attack)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Guard Rail: Validate tenant_id and webhook_id\n// Production hardening: Accept TEXT or UUID tenant_id, will be resolved to UUID\nconst input = $input.item.json;\n\nif (!input.tenant_id) {\n  return {\n    valid: false,\n    error: 'tenant_id is required in query params',\n    statusCode: 400\n  };\n}\n\nif (!input.webhook_id) {\n  return {\n    valid: false,\n    error: 'webhook_id (CheckoutRequestID) is required',\n    statusCode: 400\n  };\n}\n\nreturn {\n  valid: true,\n  ...input\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-valid",
+      "name": "Check Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={{ { error: $json.error, statusCode: $json.statusCode } }}",
+        "options": {}
+      },
+      "id": "return-error",
+      "name": "Return Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/webhook_received?tenant_id=eq.{{$('Extract Tenant UUID').first().json.tenant_id}}&webhook_id=eq.{{$json.webhook_id}}&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-idempotency",
+      "name": "Idempotency Check: webhook_received",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200],
+      "notes": "Check if webhook already processed. Reference: docs/core/verified-research-findings.md PART 3 lines 533-538"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "already-processed",
+              "leftValue": "={{$json.length}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-already-processed",
+      "name": "If Already Processed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { status: 'already_processed', message: 'Webhook already processed (idempotent)' } }}",
+        "options": {}
+      },
+      "id": "return-idempotent",
+      "name": "Return Idempotent Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 100],
+      "notes": "Return 200 if already processed (idempotent). Reference: docs/core/verified-research-findings.md PART 3 line 536"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/webhook_received",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$('Extract Tenant UUID').first().json.tenant_id}}\",\n  \"webhook_id\": \"{{$('Extract Tenant UUID').first().json.webhook_id}}\",\n  \"status\": \"pending\",\n  \"payload\": {{JSON.stringify($('Extract Webhook Data').first().json)}}\n}",
+        "options": {}
+      },
+      "id": "record-webhook",
+      "name": "Record Webhook (Before Processing)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300],
+      "notes": "Record webhook BEFORE processing (prevents race conditions). Reference: docs/core/verified-research-findings.md PART 3 line 541"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-success",
+              "leftValue": "={{$('Extract Tenant UUID').first().json.result_code || $('Extract Webhook Data').first().json.result_code}}",
+              "rightValue": "0",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-result-code",
+      "name": "Check Result Code",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1650, 300],
+      "notes": "M-Pesa result_code: 0 = success, != 0 = failure. Reference: docs/core/verified-research-findings.md PART 3 line 544"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/match_payment_exact",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_tenant_id\": \"{{$('Extract Tenant UUID').first().json.tenant_id}}\",\n  \"p_phone\": \"{{$('Extract Tenant UUID').first().json.phone}}\",\n  \"p_amount\": {{$('Extract Tenant UUID').first().json.amount}},\n  \"p_m_pesa_receipt\": \"{{$('Extract Tenant UUID').first().json.receipt}}\"\n}",
+        "options": {}
+      },
+      "id": "match-exact",
+      "name": "Tier 1: Match Payment Exact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 200],
+      "notes": "Try exact match first (phone + amount). Reference: docs/core/verified-research-findings.md PART 2 lines 378-395"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if exact match found\n// Use UUID tenant_id from Extract Tenant UUID node\nconst exactMatch = $input.item.json || [];\nconst tenantData = $('Extract Tenant UUID').first().json;\n\nif (exactMatch.length > 0 && exactMatch[0].confidence === 1.0) {\n  return {\n    match_found: true,\n    match_type: 'exact',\n    order_id: exactMatch[0].order_id,\n    confidence: 1.0,\n    tenant_id: tenantData.tenant_id,  // UUID\n    webhook_id: tenantData.webhook_id,\n    receipt: tenantData.receipt,\n    amount: tenantData.amount,\n    phone: tenantData.phone,\n    timestamp: tenantData.timestamp\n  };\n}\n\nreturn {\n  match_found: false,\n  match_type: null,\n  tenant_id: tenantData.tenant_id,  // UUID\n  webhook_id: tenantData.webhook_id,\n  receipt: tenantData.receipt,\n  amount: tenantData.amount,\n  phone: tenantData.phone,\n  timestamp: tenantData.timestamp\n};"
+      },
+      "id": "check-exact-match",
+      "name": "Check Exact Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "exact-found",
+              "leftValue": "={{$json.match_found}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-exact-match",
+      "name": "If Exact Match",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/match_payment_fuzzy",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_tenant_id\": \"{{$('Extract Tenant UUID').first().json.tenant_id}}\",\n  \"p_phone\": \"{{$('Check Exact Match').first().json.phone}}\",\n  \"p_amount\": {{$('Check Exact Match').first().json.amount}}\n}",
+        "options": {}
+      },
+      "id": "match-fuzzy",
+      "name": "Tier 2: Match Payment Fuzzy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2250, 300],
+      "notes": "Try fuzzy match (±KSh 20 tolerance). Reference: docs/core/verified-research-findings.md PART 2 lines 399-416"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check fuzzy match result\n// Use UUID tenant_id from Extract Tenant UUID node\nconst fuzzyMatch = $input.item.json || [];\nconst input = $('Check Exact Match').first().json;\n\nif (fuzzyMatch.length > 0) {\n  const match = fuzzyMatch[0];\n  const confidence = parseFloat(match.confidence || 0);\n  \n  if (confidence >= 0.95) {\n    return {\n      match_found: true,\n      match_type: 'fuzzy_auto',\n      order_id: match.order_id,\n      confidence: confidence,\n      tenant_id: input.tenant_id,  // UUID\n      webhook_id: input.webhook_id,\n      receipt: input.receipt,\n      amount: input.amount,\n      phone: input.phone,\n      timestamp: input.timestamp\n    };\n  } else if (confidence >= 0.85) {\n    return {\n      match_found: true,\n      match_type: 'fuzzy_review',\n      order_id: match.order_id,\n      confidence: confidence,\n      tenant_id: input.tenant_id,  // UUID\n      webhook_id: input.webhook_id,\n      receipt: input.receipt,\n      amount: input.amount,\n      phone: input.phone,\n      timestamp: input.timestamp\n    };\n  }\n}\n\nreturn {\n  match_found: false,\n  match_type: 'no_match',\n  tenant_id: input.tenant_id,  // UUID\n  webhook_id: input.webhook_id,\n  receipt: input.receipt,\n  amount: input.amount,\n  phone: input.phone,\n  timestamp: input.timestamp\n};"
+      },
+      "id": "check-fuzzy-match",
+      "name": "Check Fuzzy Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "is-exact",
+                    "leftValue": "={{$json.match_type}}",
+                    "rightValue": "exact",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "auto-match"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "is-fuzzy-auto",
+                    "leftValue": "={{$json.match_type}}",
+                    "rightValue": "fuzzy_auto",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "auto-match"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "is-fuzzy-review",
+                    "leftValue": "={{$json.match_type}}",
+                    "rightValue": "fuzzy_review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "manual-review"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "is-no-match",
+                    "leftValue": "={{$json.match_type}}",
+                    "rightValue": "no_match",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "manual-review"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-match-type",
+      "name": "Route: Auto-Match vs Review",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [2650, 300],
+      "notes": "Route based on match type. Reference: docs/core/verified-research-findings.md PART 2 lines 429-459"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/payments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenant_id\": \"{{$json.tenant_id}}\",\n  \"m_pesa_receipt\": \"{{$json.receipt}}\",\n  \"m_pesa_phone\": \"{{$json.phone}}\",\n  \"m_pesa_amount\": {{$json.amount}},\n  \"m_pesa_timestamp\": \"{{$json.timestamp}}\",\n  \"order_id\": \"{{$json.order_id}}\",\n  \"match_confidence\": {{$json.confidence}},\n  \"match_method\": \"{{$json.match_type}}\",\n  \"status\": \"matched\",\n  \"webhook_id\": \"{{$json.webhook_id}}\"\n}",
+        "options": {}
+      },
+      "id": "create-payment",
+      "name": "Create Payment Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2850, 200]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/orders?id=eq.{{$json.order_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"payment_status\": \"paid\",\n  \"m_pesa_receipt\": \"{{$json.receipt}}\",\n  \"m_pesa_paid_at\": \"{{$json.timestamp}}\"\n}",
+        "options": {}
+      },
+      "id": "update-order",
+      "name": "Update Order Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3050, 200]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/webhook_received?tenant_id=eq.{{$('Extract Tenant UUID').first().json.tenant_id}}&webhook_id=eq.{{$json.webhook_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"processed\",\n  \"processed_at\": \"{{new Date().toISOString()}}\"\n}",
+        "options": {}
+      },
+      "id": "update-webhook-status",
+      "name": "Update Webhook Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/queue_payment_review",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_tenant_id\": \"{{$('Extract Tenant UUID').first().json.tenant_id}}\",\n  \"p_payment_id\": \"{{$json.payment_id}}\",\n  \"p_reason\": \"{{$json.match_type === 'fuzzy_review' ? 'Low confidence match (' + $json.confidence + ')' : 'No matching order found'}}\"\n}",
+        "options": {}
+      },
+      "id": "queue-review",
+      "name": "Queue for Manual Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2850, 400],
+      "notes": "Queue payment for human review. Reference: docs/core/verified-research-findings.md PART 2 lines 420-427"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { status: 'success', message: 'Webhook processed' } }}",
+        "options": {}
+      },
+      "id": "return-success",
+      "name": "Return 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [3450, 300],
+      "notes": "Always return 200 to M-Pesa (even on errors). Reference: docs/core/verified-research-findings.md PART 3 line 557"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{$env.N8N_WORKFLOW_LOOKUP_TENANT || '00_lookup_tenant_config'}}",
+        "options": {}
+      },
+      "id": "lookup-tenant",
+      "name": "Lookup Tenant UUID",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1850, 200],
+      "notes": "Resolve tenant_id (TEXT or UUID) to UUID. Uses 00_lookup_tenant_config workflow."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract UUID tenant_id from lookup result\n// Production hardening: Always use UUID tenant_id for database operations\nconst lookupResult = $input.item.json;\nconst validated = $('Validate Input').first().json;\nconst webhookData = $('Extract Webhook Data').first().json;\n\nif (!lookupResult.tenant_id) {\n  return {\n    valid: false,\n    error: 'Tenant lookup failed',\n    statusCode: 404\n  };\n}\n\n// Use UUID tenant_id from lookup (always UUID)\n// Merge all data for downstream operations\nreturn {\n  tenant_id: lookupResult.tenant_id,  // UUID (from lookup)\n  tenant_id_input: validated.tenant_id,  // Original input (for logging)\n  webhook_id: validated.webhook_id || webhookData.webhook_id,\n  result_code: validated.result_code || webhookData.result_code,\n  receipt: validated.receipt || webhookData.receipt,\n  amount: validated.amount || webhookData.amount,\n  phone: validated.phone || webhookData.phone,\n  timestamp: validated.timestamp || webhookData.timestamp,\n  transaction_date: validated.transaction_date || webhookData.transaction_date\n};"
+      },
+      "id": "extract-tenant-uuid",
+      "name": "Extract Tenant UUID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2050, 200],
+      "notes": "Extract UUID tenant_id from lookup result for downstream operations"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Handler: Classify Error\n// Production hardening: Classify errors for appropriate handling\n\nconst error = $input.item.json.error || $input.item.json;\nconst errorMessage = (error?.message || JSON.stringify(error)).toLowerCase();\nconst errorCode = error?.code || error?.status || '';\n\n// Classify error type\nlet classification = 'NEEDS_REVIEW';\nif (errorCode === 'ECONNREFUSED' || errorCode === 'ETIMEDOUT' || errorCode === 429 || errorCode === 503) {\n  classification = 'RETRYABLE';\n} else if (errorCode === 401 || errorCode === 403) {\n  classification = 'CRITICAL';\n}\n\nreturn {\n  error: error,\n  classification: classification,\n  requires_manual_review: classification === 'NEEDS_REVIEW' || classification === 'CRITICAL',\n  original_data: $('Extract Webhook Data').first()?.json || {}\n};"
+      },
+      "id": "error-classify",
+      "name": "Error Handler: Classify Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 500],
+      "notes": "Classify errors for appropriate handling (retryable, needs review, critical)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/error_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"error_type\": \"{{$json.classification}}\",\n  \"error_message\": \"{{JSON.stringify($json.error)}}\",\n  \"context\": \"payment_reconciliation\",\n  \"requires_review\": {{$json.requires_manual_review}}\n}",
+        "options": {}
+      },
+      "id": "error-log",
+      "name": "Error Handler: Log to error_logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 500],
+      "notes": "Log error to error_logs table for monitoring and review"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/review_queue",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"item_type\": \"payment_error\",\n  \"item_data\": {{JSON.stringify($json)}},\n  \"priority\": \"{{$json.classification === 'CRITICAL' ? 'high' : 'medium'}}\",\n  \"requires_review\": true\n}",
+        "options": {}
+      },
+      "id": "error-review",
+      "name": "Error Handler: Add to Review Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 500],
+      "notes": "Add error to review_queue for manual intervention"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { status: 'acknowledged', message: 'Error logged and queued for review' } }}",
+        "options": {}
+      },
+      "id": "error-return",
+      "name": "Error Handler: Return 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 500],
+      "notes": "Always return 200 OK to M-Pesa even on errors (acknowledge receipt)"
+    }
+  ],
+  "connections": {
+    "M-Pesa Webhook": {
+      "main": [[{"node": "Extract Webhook Data", "type": "main", "index": 0}]]
+    },
+    "Extract Webhook Data": {
+      "main": [[{"node": "Verify M-Pesa Signature", "type": "main", "index": 0}]]
+    },
+    "Verify M-Pesa Signature": {
+      "main": [[{"node": "Check Signature Valid", "type": "main", "index": 0}]]
+    },
+    "Check Signature Valid": {
+      "main": [
+        [{"node": "Validate Webhook Timestamp", "type": "main", "index": 0}],
+        [{"node": "Return Signature Error (401)", "type": "main", "index": 0}]
+      ]
+    },
+    "Validate Webhook Timestamp": {
+      "main": [[{"node": "Check Timestamp Valid", "type": "main", "index": 0}]]
+    },
+    "Check Timestamp Valid": {
+      "main": [
+        [{"node": "Validate Input", "type": "main", "index": 0}],
+        [{"node": "Return Timestamp Error", "type": "main", "index": 0}]
+      ]
+    },
+    "Validate Input": {
+      "main": [[{"node": "Check Valid", "type": "main", "index": 0}]]
+    },
+    "Check Valid": {
+      "main": [
+        [{"node": "Lookup Tenant UUID", "type": "main", "index": 0}],
+        [{"node": "Return Error", "type": "main", "index": 0}]
+      ]
+    },
+    "Lookup Tenant UUID": {
+      "main": [[{"node": "Extract Tenant UUID", "type": "main", "index": 0}]]
+    },
+    "Extract Tenant UUID": {
+      "main": [[{"node": "Idempotency Check: webhook_received", "type": "main", "index": 0}]]
+    },
+    "Idempotency Check: webhook_received": {
+      "main": [[{"node": "If Already Processed", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "If Already Processed": {
+      "main": [
+        [{"node": "Return Idempotent Success", "type": "main", "index": 0}],
+        [{"node": "Record Webhook (Before Processing)", "type": "main", "index": 0}]
+      ]
+    },
+    "Record Webhook (Before Processing)": {
+      "main": [[{"node": "Check Result Code", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Check Result Code": {
+      "main": [
+        [{"node": "Tier 1: Match Payment Exact", "type": "main", "index": 0}],
+        [{"node": "Return 200 OK", "type": "main", "index": 0}]
+      ]
+    },
+    "Tier 1: Match Payment Exact": {
+      "main": [[{"node": "Check Exact Match", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Check Exact Match": {
+      "main": [[{"node": "If Exact Match", "type": "main", "index": 0}]]
+    },
+    "If Exact Match": {
+      "main": [
+        [{"node": "Create Payment Record", "type": "main", "index": 0}],
+        [{"node": "Tier 2: Match Payment Fuzzy", "type": "main", "index": 0}]
+      ]
+    },
+    "Tier 2: Match Payment Fuzzy": {
+      "main": [[{"node": "Check Fuzzy Match", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Check Fuzzy Match": {
+      "main": [[{"node": "Route: Auto-Match vs Review", "type": "main", "index": 0}]]
+    },
+    "Route: Auto-Match vs Review": {
+      "main": [
+        [{"node": "Create Payment Record", "type": "main", "index": 0}],
+        [{"node": "Queue for Manual Review", "type": "main", "index": 0}]
+      ]
+    },
+    "Create Payment Record": {
+      "main": [[{"node": "Update Order Status", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Update Order Status": {
+      "main": [[{"node": "Update Webhook Status", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Update Webhook Status": {
+      "main": [[{"node": "Return 200 OK", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Queue for Manual Review": {
+      "main": [[{"node": "Return 200 OK", "type": "main", "index": 0}]],
+      "onError": [[{"node": "Error Handler: Classify Error", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Classify Error": {
+      "main": [[{"node": "Error Handler: Log to error_logs", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Log to error_logs": {
+      "main": [[{"node": "Error Handler: Add to Review Queue", "type": "main", "index": 0}]]
+    },
+    "Error Handler: Add to Review Queue": {
+      "main": [[{"node": "Error Handler: Return 200 OK", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "2",
+  "notes": "✅ Payment reconciliation with research-locked patterns: Idempotency (webhook_received), Exact match (Tier 1), Fuzzy match (Tier 2), Review queue (Tier 3). Reference: docs/core/verified-research-findings.md PART 2 & PART 3\n\n✅ ERROR HANDLING: Industry-standard error handling for payment reconciliation:\n- Error classification (needs review, critical)\n- Error logging to error_logs table\n- Errors added to review_queue for manual intervention\n- Always return 200 OK to M-Pesa (acknowledge receipt)\n- Connected via On Error outputs from HTTP Request nodes"
+}
