@@ -1,0 +1,221 @@
+{
+  "name": "02_check_consent",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{$json.phone}}",
+              "type": "string"
+            },
+            {
+              "id": "channel",
+              "name": "channel",
+              "value": "={{$json.channel || 'whatsapp'}}",
+              "type": "string"
+            },
+            {
+              "id": "purpose",
+              "name": "purpose",
+              "value": "={{$json.purpose || 'transactional'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/consent?phone=eq.{{$json.phone}}&channel=eq.{{$json.channel}}&purpose=eq.{{$json.purpose}}&status=eq.active&select=consent_id,phone,channel,purpose,status,timestamp&order=timestamp.desc&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "query-consent",
+      "name": "Query Consent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-consent",
+              "leftValue": "={{$json.length}}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-consent-found",
+      "name": "Consent Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consent found - return valid\n// Architecture: See docs/WAAS_ARCHITECTURE.md (Consent Tracking)\n\nconst consent = $input.item.json[0];\n\nreturn {\n  consent_valid: true,\n  consent_id: consent.consent_id,\n  phone: consent.phone,\n  channel: consent.channel,\n  purpose: consent.purpose,\n  timestamp: consent.timestamp\n};"
+      },
+      "id": "consent-valid",
+      "name": "Consent Valid",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// No consent found - check if transactional (implied consent)\n// Architecture: See docs/WAAS_ARCHITECTURE.md (Consent Rules)\n\nconst input = $('Extract Input').first().json;\n\n// Transactional messages have implied consent\nif (input.purpose === 'transactional') {\n  return {\n    consent_valid: true,\n    consent_id: null,\n    phone: input.phone,\n    channel: input.channel,\n    purpose: input.purpose,\n    implied_consent: true\n  };\n}\n\n// Marketing requires explicit consent\nreturn {\n  consent_valid: false,\n  consent_id: null,\n  phone: input.phone,\n  channel: input.channel,\n  purpose: input.purpose,\n  requires_review: true\n};"
+      },
+      "id": "check-implied",
+      "name": "Check Implied Consent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/daily_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event_type",
+              "value": "=consent_missing"
+            },
+            {
+              "name": "details",
+              "value": "=Marketing message blocked - no consent for {{$json.phone}}"
+            },
+            {
+              "name": "requires_review",
+              "value": "=true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-missing",
+      "name": "Log Missing Consent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "result",
+              "name": "result",
+              "value": "={{$json}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Extract Input": {
+      "main": [[{"node": "Query Consent", "type": "main", "index": 0}]]
+    },
+    "Query Consent": {
+      "main": [[{"node": "Consent Found?", "type": "main", "index": 0}]]
+    },
+    "Consent Found?": {
+      "main": [
+        [{"node": "Consent Valid", "type": "main", "index": 0}],
+        [{"node": "Check Implied Consent", "type": "main", "index": 0}]
+      ]
+    },
+    "Consent Valid": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    },
+    "Check Implied Consent": {
+      "main": [
+        [{"node": "Return Result", "type": "main", "index": 0}],
+        [{"node": "Log Missing Consent", "type": "main", "index": 0}]
+      ]
+    },
+    "Log Missing Consent": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1"
+}
+
