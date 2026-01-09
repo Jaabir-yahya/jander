@@ -1,0 +1,71 @@
+# Nairobi WhatsApp Commerce - Cursor AI Rules (2026 Solo Dev)
+
+## ALWAYS REFERENCE THESE FILES
+docs/ARCHITECTURE.md
+docs/WORKFLOWS.md  
+docs/BUILD_PLAN.md
+docs/CONTEXT.md
+
+## WEEK-BY-WEEK CONTEXT
+Current week: 1
+Target: 5 traders, 20 orders/week
+
+## CORE CONSTRAINTS
+- WhatsApp-first, backend invisible
+- M-Pesa Daraja webhooks mandatory
+- Chat overload prevention: shared inbox + tags
+- Gikomba reality: voice notes, Sheng/Somali, low literacy
+- Sheets→Supabase progression only
+
+## TECH STACK (Week 1-4)
+Google Sheets + WhatsApp Cloud API + n8n
+M-Pesa Daraja (Sandbox)
+
+## TECH STACK (Week 5+)
+Supabase + Whalesync + M-Pesa Daraja live
+
+## EVERY RESPONSE MUST INCLUDE
+1. Exact code/setup steps
+2. Error handling (Nairobi: spotty 4G, voice notes)
+3. Test case (1 happy, 1 error)
+4. Migration path (Sheets→Supabase→ERPNext)
+5. Update instructions for 5 golden docs
+
+## PROMPT TEMPLATES (USE THESE)
+Week {{CURRENT_WEEK}} task: "{{TASK}}"
+Reference: @docs/ARCHITECTURE.md @docs/WORKFLOWS.md @docs/CONTEXT.md
+
+## NAirobi Edge Cases (Always Handle)
+- Spotty 4G: Offline fallback, batch sync
+- Voice notes: Sheng/Somali transcription (Google Speech-to-Text)
+- Payment mismatch: KSh 500 received but no order found
+- Chat overload: 200+ messages/day, missed orders
+- Low literacy: Emoji quick-replies, visual buttons
+
+## ERROR HANDLING PATTERNS
+- WhatsApp API down: Queue messages, retry 3x, log to DAILY_LOG
+- M-Pesa webhook fails: Screenshot fallback, manual matching
+- Google Sheets quota: Rate limit handling, exponential backoff
+- Voice note unclear: Flag for manual review, notify trader
+
+## TEST SCENARIOS (Always Include)
+1. Happy path: Order → Sheet → WhatsApp confirmation
+2. Error: Voice note with unclear Sheng/Somali
+3. Error: Payment received but order not found
+4. Edge: Offline order capture → sync when online
+5. Edge: Multiple orders from same customer
+
+## DEPLOYMENT CHECKLIST
+- ngrok tunnel if local webhook testing
+- n8n workflow exported to apps/n8n/
+- Google Sheets permissions configured
+- WhatsApp template approval status checked
+- M-Pesa Daraja webhook URL verified
+
+## DOCUMENTATION UPDATES
+After each feature:
+1. Update ARCHITECTURE.md with component details
+2. Add learnings to BUILD_PLAN.md (Week X section)
+3. Note failures in CONTEXT.md if new pattern emerges
+4. Update WORKFLOWS.md if process changes
+

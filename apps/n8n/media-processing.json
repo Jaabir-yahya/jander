@@ -1,0 +1,397 @@
+{
+  "name": "Media Processing (Image OCR + Voice Transcription)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-media",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "media-processing"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message?.type}}",
+              "operation": "equals",
+              "value2": "image"
+            }
+          ]
+        }
+      },
+      "id": "is-image",
+      "name": "Is Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message?.type}}",
+              "operation": "equals",
+              "value2": "audio"
+            }
+          ]
+        }
+      },
+      "id": "is-audio",
+      "name": "Is Audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.message?.image?.url}}",
+        "authentication": "headerAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-image",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 250]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "annotate",
+        "requestsUi": {
+          "requestValues": {
+            "image": {
+              "source": "={{$binary.data}}",
+              "type": "={{$binary.mimeType}}"
+            },
+            "features": [
+              {
+                "type": "DOCUMENT_TEXT_DETECTION"
+              }
+            ]
+          }
+        }
+      },
+      "id": "google-vision-ocr",
+      "name": "Google Vision OCR",
+      "type": "n8n-nodes-base.googleCloudVision",
+      "typeVersion": 1,
+      "position": [850, 250],
+      "credentials": {
+        "googleCloudVisionOAuth2Api": {
+          "id": "google-cloud-credentials",
+          "name": "Google Cloud account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse order from OCR text\nconst ocrText = $input.item.json.responses[0]?.fullTextAnnotation?.text || '';\n\n// Extract order details from OCR text\n// Pattern: quantity, product, customer info\nconst patterns = [\n  /(\\d+)\\s*(?:m|meter|metre|senti)\\s+(.+?)\\s*,\\s*(.+?)\\s*,\\s*(\\+?254\\d{9})/i,\n  /order[\\s:]+(\\d+)\\s*(?:m|meter|metre|senti)\\s+(.+?)\\s+for\\s+(.+?)\\s+(\\+?254\\d{9})/i\n];\n\nlet orderData = {\n  quantity: null,\n  product_name: '',\n  customer_name: '',\n  customer_phone: $input.item.json.from?.phone || '',\n  raw_ocr: ocrText,\n  source: 'image'\n};\n\nfor (const pattern of patterns) {\n  const match = ocrText.match(pattern);\n  if (match) {\n    orderData.quantity = parseInt(match[1]);\n    orderData.product_name = match[2].trim();\n    orderData.customer_name = match[3].trim();\n    if (match[4]) orderData.customer_phone = match[4];\n    break;\n  }\n}\n\nreturn {\n  json: orderData\n};"
+      },
+      "id": "parse-ocr-order",
+      "name": "Parse OCR Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 250]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.message?.audio?.url}}",
+        "authentication": "headerAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-audio",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 350]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://speech.googleapis.com/v1/speech:recognize",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"config\": {\n    \"encoding\": \"OGG_OPUS\",\n    \"sampleRateHertz\": 16000,\n    \"languageCode\": \"sw-KE\",\n    \"alternativeLanguageCodes\": [\"en-KE\"],\n    \"model\": \"default\",\n    \"enableAutomaticPunctuation\": true\n  },\n  \"audio\": {\n    \"content\": \"={{$binary.data.toString('base64')}}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "speech-to-text",
+      "name": "Google Speech-to-Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 350],
+      "credentials": {
+        "googleApi": {
+          "id": "google-cloud-credentials",
+          "name": "Google Cloud account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract transcription and confidence\nconst results = $input.item.json.results || [];\nconst transcription = results[0]?.alternatives[0]?.transcript || '';\nconst confidence = results[0]?.alternatives[0]?.confidence || 0;\n\n// Parse order from transcription\nconst patterns = [\n  /(\\d+)\\s*(?:m|meter|metre|senti|senti kumi|moja|mbili|tatu|nne|tano)\\s+(.+?)\\s*(?:kwa|for|for|nimtaki|nataka)\\s*(.+?)\\s*(\\+?254\\d{9})?/i,\n  /(\\d+)\\s+(.+?)\\s*,\\s*(.+?)\\s*,\\s*(\\+?254\\d{9})/i\n];\n\nlet orderData = {\n  quantity: null,\n  product_name: '',\n  customer_name: '',\n  customer_phone: $input.item.json.from?.phone || '',\n  raw_transcription: transcription,\n  confidence: confidence,\n  source: 'audio'\n};\n\nfor (const pattern of patterns) {\n  const match = transcription.match(pattern);\n  if (match) {\n    orderData.quantity = parseInt(match[1]);\n    orderData.product_name = match[2].trim();\n    orderData.customer_name = match[3].trim();\n    if (match[4]) orderData.customer_phone = match[4];\n    break;\n  }\n}\n\n// Check confidence threshold\nif (confidence < 0.7) {\n  orderData.needs_review = true;\n  orderData.review_reason = 'Low confidence transcription';\n}\n\nreturn {\n  json: orderData\n};"
+      },
+      "id": "parse-transcription",
+      "name": "Parse Transcription",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 350]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.confidence || 1}}",
+              "operation": "smaller",
+              "value2": 0.7
+            }
+          ]
+        }
+      },
+      "id": "check-confidence",
+      "name": "Low Confidence?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 350]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.GOOGLE_SHEETS_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "DAILY_LOG",
+          "mode": "list",
+          "cachedResultName": "DAILY_LOG"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "date": "={{new Date().toISOString().split('T')[0]}}",
+            "event_type": "Voice Note Review",
+            "trader_id": "={{$env.TRADER_ID}}",
+            "details": "={{JSON.stringify($json)}}",
+            "resolved": "No"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-for-review",
+      "name": "Log for Manual Review",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1450, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.GOOGLE_SHEETS_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ORDERS",
+          "mode": "list",
+          "cachedResultName": "ORDERS"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "order_id": "={{$json.order_id}}",
+            "order_date": "={{new Date().toISOString()}}",
+            "trader_id": "={{$env.TRADER_ID}}",
+            "customer_name": "={{$json.customer_name}}",
+            "customer_phone": "={{$json.customer_phone}}",
+            "product_name": "={{$json.product_name}}",
+            "quantity": "={{$json.quantity}}",
+            "payment_status": "Pending",
+            "dispatch_status": "Not Ready",
+            "notes": "={{$json.raw_transcription || $json.raw_ocr}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "create-order-from-media",
+      "name": "Create Order from Media",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1250, 250],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Image?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Image?": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Google Vision OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Vision OCR": {
+      "main": [
+        [
+          {
+            "node": "Parse OCR Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OCR Order": {
+      "main": [
+        [
+          {
+            "node": "Create Order from Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Audio?": {
+      "main": [
+        [
+          {
+            "node": "Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Google Speech-to-Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Speech-to-Text": {
+      "main": [
+        [
+          {
+            "node": "Parse Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Transcription": {
+      "main": [
+        [
+          {
+            "node": "Low Confidence?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Low Confidence?": {
+      "main": [
+        [
+          {
+            "node": "Create Order from Media",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log for Manual Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-20T00:00:00.000Z",
+  "versionId": "1"
+}
+
+

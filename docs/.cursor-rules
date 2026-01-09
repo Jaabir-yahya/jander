@@ -1,0 +1,43 @@
+# Nairobi WhatsApp Commerce Rules for Cursor AI
+
+## CORE CONSTRAINTS
+- WhatsApp-first, backend invisible to traders
+- M-Pesa reconciliation non-negotiable (Daraja webhooks)
+- Chat overload kills 70% pilots: minimal structure only
+- Gikomba/Eastleigh reality: voice notes, Sheng/Somali, low literacy
+- Start Sheets→Airtable→Supabase progression
+
+## TECH STACK (Week-by-week)
+W1-2: Google Sheets + WhatsApp Business Cloud API + n8n
+W3-4: Airtable forms + M-Pesa Daraja sandbox
+W5+: Supabase Postgres + Whalesync sync
+
+## PRIORITIES
+1. Payment matching (90%+ accuracy)
+2. Chat overload prevention (shared inbox, tags)
+3. eTIMS compliance (invoice refs)
+4. Voice note handling (transcription fallback)
+
+## WHAT NOT TO DO
+- No ERPNext UI exposure (backend only)
+- No complex forms (quick replies + simple text)
+- No in-app payments (M-Pesa Till only)
+- No premature dispatch APIs (manual boda first)
+
+## FILES TO ALWAYS REFERENCE
+- docs/ARCHITECTURE.md (schema, APIs)
+- docs/WORKFLOWS.md (7-stage lifecycle)
+- docs/CONTEXT.md (failure modes, citations)
+
+## PROMPT STYLE
+Always generate:
+- Code + exact setup instructions
+- Error handling for Nairobi realities (spotty 4G, voice notes)
+- Fallbacks for API failures
+- Migration paths (Sheets→Supabase→ERPNext)
+
+## TESTING
+Every feature must have:
+1. Manual test case (trader perspective)
+2. Error case (API down, voice note)
+3. Audit log entry

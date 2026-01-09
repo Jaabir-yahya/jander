@@ -1,0 +1,163 @@
+{
+  "name": "SMSLeopard WhatsApp Webhook Receiver",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "whatsapp-smsleopard"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "message_text",
+              "name": "message.text",
+              "value": "={{$json.body.message?.text?.body || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "message_type",
+              "name": "message.type",
+              "value": "={{$json.body.message?.type || 'text'}}",
+              "type": "string"
+            },
+            {
+              "id": "from_phone",
+              "name": "from.phone",
+              "value": "={{$json.body.from?.phone || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "message_id",
+              "name": "message.id",
+              "value": "={{$json.body.message?.id || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "image_url",
+              "name": "message.image.url",
+              "value": "={{$json.body.message?.image?.url || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "audio_url",
+              "name": "message.audio.url",
+              "value": "={{$json.body.message?.audio?.url || ''}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-node",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json['message.type']}}",
+              "operation": "equals",
+              "value2": "text"
+            }
+          ]
+        }
+      },
+      "id": "if-node-text",
+      "name": "Is Text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json['message.type']}}",
+              "operation": "equals",
+              "value2": "image"
+            }
+          ]
+        }
+      },
+      "id": "if-node-image",
+      "name": "Is Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json['message.type']}}",
+              "operation": "equals",
+              "value2": "audio"
+            }
+          ]
+        }
+      },
+      "id": "if-node-audio",
+      "name": "Is Audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 500]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Is Text?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Image?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-20T00:00:00.000Z",
+  "versionId": "1"
+}
+
+

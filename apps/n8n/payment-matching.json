@@ -1,0 +1,256 @@
+{
+  "name": "M-Pesa Payment Matching Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mpesa",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "mpesa-webhook",
+      "name": "M-Pesa Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "mpesa-payment"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.GOOGLE_SHEETS_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ORDERS",
+          "mode": "list",
+          "cachedResultName": "ORDERS"
+        },
+        "options": {
+          "range": "",
+          "useFirstRowAsHeaders": true
+        },
+        "filters": {
+          "conditions": [
+            {
+              "column": "customer_phone",
+              "condition": "equals",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "column": "payment_status",
+              "condition": "equals",
+              "value": "Pending"
+            }
+          ]
+        }
+      },
+      "id": "search-orders",
+      "name": "Search Pending Orders",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [450, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.matchedOrders.length}}",
+              "operation": "equals",
+              "value2": 1
+            }
+          ]
+        }
+      },
+      "id": "check-match-count",
+      "name": "Single Match?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter orders by amount match (±KSh 50 tolerance)\nconst paymentAmount = $input.item.json.amount;\nconst tolerance = 50;\n\nconst matchedOrders = $input.item.json.matchedOrders.filter(order => {\n  const orderTotal = parseFloat(order.total_kes || 0);\n  return Math.abs(paymentAmount - orderTotal) <= tolerance;\n});\n\nreturn {\n  json: {\n    ...$input.item.json,\n    matchedOrders: matchedOrders\n  }\n};"
+      },
+      "id": "filter-by-amount",
+      "name": "Filter by Amount",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.GOOGLE_SHEETS_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ORDERS",
+          "mode": "list",
+          "cachedResultName": "ORDERS"
+        },
+        "columnToMatchOn": "order_id",
+        "valueToMatchOn": "={{$json.matchedOrders[0].order_id}}",
+        "values": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "payment_status": "Confirmed",
+            "payment_ref": "={{$json.mpesa_ref}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "update-payment-status",
+      "name": "Update Payment Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [850, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.GOOGLE_SHEETS_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "DAILY_LOG",
+          "mode": "list",
+          "cachedResultName": "DAILY_LOG"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "date": "={{new Date().toISOString().split('T')[0]}}",
+            "event_type": "={{$json.matchedOrders.length === 0 ? 'Payment Mismatch' : 'Payment Matched'}}",
+            "details": "={{JSON.stringify($json)}}",
+            "resolved": "={{$json.matchedOrders.length === 1 ? 'Yes' : 'No'}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-event",
+      "name": "Log to Daily Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [750, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.SMSLEOPARD_API_BASE_URL}}/whatsapp/send",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{$json.phone}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"✅ Payment received! Order {{$json.matchedOrders[0].order_id}} is confirmed and ready for dispatch.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send-payment-confirmation",
+      "name": "Send Payment Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "M-Pesa Webhook": {
+      "main": [
+        [
+          {
+            "node": "Search Pending Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Pending Orders": {
+      "main": [
+        [
+          {
+            "node": "Filter by Amount",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter by Amount": {
+      "main": [
+        [
+          {
+            "node": "Single Match?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Single Match?": {
+      "main": [
+        [
+          {
+            "node": "Update Payment Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log to Daily Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Payment Status": {
+      "main": [
+        [
+          {
+            "node": "Send Payment Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-20T00:00:00.000Z",
+  "versionId": "1"
+}
+
+

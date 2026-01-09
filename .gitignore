@@ -1,0 +1,117 @@
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+*.env
+!.env.example
+!*.env.example
+
+# API Keys & Credentials
+credentials/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*_credentials.json
+*_secrets.json
+google-credentials.json
+firebase-adminsdk-*.json
+service-account-*.json
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+.pnpm-debug.log*
+
+# Package Manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+.cursor/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+*.test.js.snap
+.jest/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+.next/
+out/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# n8n data (contains sensitive workflow data)
+apps/n8n/.n8n/
+n8n_data/
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Redis dumps
+dump.rdb
+
+# ngrok config (may contain auth tokens)
+.ngrok2/
+ngrok.yml
+
+# Docker volumes (may contain sensitive data)
+docker-volumes/
+*.sql.gz
+
+# Security scanning
+.secretlintrc.local

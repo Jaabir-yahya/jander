@@ -1,0 +1,98 @@
+{
+  "name": "Complete Automation Chain",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "whatsapp-webhook",
+      "name": "WhatsApp Webhook (SMSLeopard)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "complete-automation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message?.type}}",
+              "operation": "equals",
+              "value2": "text"
+            }
+          ]
+        }
+      },
+      "id": "route-by-type",
+      "name": "Route by Message Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [450, 300],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.message?.type}}",
+                    "operation": "equals",
+                    "value2": "text"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "text"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.message?.type}}",
+                    "operation": "equals",
+                    "value2": "image"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "image"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.message?.type}}",
+                    "operation": "equals",
+                    "value2": "audio"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
+            }
+          ]
+        },
+        "fallbackOutput": "default",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {},
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-20T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "This is the master workflow that combines all automation workflows. Import individual workflows (order-processing.json, media-processing.json, payment-matching.json) and connect them to this routing node."
+}
+
+

@@ -1,0 +1,154 @@
+{
+  "name": "Order Processing Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "order-processing"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse order text from WhatsApp message\nconst messageText = $input.item.json.message?.text || '';\nconst fromPhone = $input.item.json.from?.phone || '';\n\n// Order pattern: \"2m red chiffon, Jane, +254700456789\"\n// Extract: quantity, product, customer_name, customer_phone\nconst patterns = [\n  /(\\d+)\\s*(?:m|meter|metre|senti)\\s+(.+?)\\s*,\\s*(.+?)\\s*,\\s*(\\+?254\\d{9})/i,\n  /(\\d+)\\s*(?:m|meter|metre|senti)\\s+(.+?)\\s+for\\s+(.+?)\\s+(\\+?254\\d{9})/i\n];\n\nlet orderData = {\n  quantity: null,\n  product_name: '',\n  customer_name: '',\n  customer_phone: fromPhone, // Default to sender if not in message\n  raw_text: messageText\n};\n\nfor (const pattern of patterns) {\n  const match = messageText.match(pattern);\n  if (match) {\n    orderData.quantity = parseInt(match[1]);\n    orderData.product_name = match[2].trim();\n    orderData.customer_name = match[3].trim();\n    if (match[4]) orderData.customer_phone = match[4];\n    break;\n  }\n}\n\n// If parsing failed, use simple split\nif (!orderData.quantity && messageText) {\n  const parts = messageText.split(',').map(p => p.trim());\n  if (parts.length >= 2) {\n    // Try to extract quantity from first part\n    const qtyMatch = parts[0].match(/(\\d+)/);\n    if (qtyMatch) {\n      orderData.quantity = parseInt(qtyMatch[1]);\n      orderData.product_name = parts[0].replace(/\\d+/, '').trim();\n    }\n    orderData.customer_name = parts[1] || '';\n    if (parts[2]) orderData.customer_phone = parts[2];\n  }\n}\n\nreturn {\n  json: {\n    ...orderData,\n    message_id: $input.item.json.message?.id || '',\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "parse-order",
+      "name": "Parse Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.GOOGLE_SHEETS_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ORDERS",
+          "mode": "list",
+          "cachedResultName": "ORDERS"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "order_id": "={{$json.order_id}}",
+            "order_date": "={{$json.timestamp}}",
+            "trader_id": "={{$env.TRADER_ID}}",
+            "customer_name": "={{$json.customer_name}}",
+            "customer_phone": "={{$json.customer_phone}}",
+            "product_name": "={{$json.product_name}}",
+            "quantity": "={{$json.quantity}}",
+            "payment_status": "Pending",
+            "dispatch_status": "Not Ready",
+            "notes": "={{$json.raw_text}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "create-order-row",
+      "name": "Create Order Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [650, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate order ID (format: O001, O002, etc.)\nconst timestamp = new Date().getTime();\nconst random = Math.floor(Math.random() * 1000);\nconst orderId = `O${timestamp.toString().slice(-6)}${random.toString().padStart(3, '0')}`;\n\nreturn {\n  json: {\n    order_id: orderId,\n    ...$input.item.json\n  }\n};"
+      },
+      "id": "generate-order-id",
+      "name": "Generate Order ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.SMSLEOPARD_API_BASE_URL}}/whatsapp/send",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{$json.customer_phone}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"order_confirmation\",\n    \"language\": {\n      \"code\": \"en\"\n    },\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\"type\": \"text\", \"text\": \"{{$json.order_id}}\"},\n          {\"type\": \"text\", \"text\": \"{{$json.product_name}}\"},\n          {\"type\": \"text\", \"text\": \"{{$json.quantity}}\"}\n        ]\n      }\n    ]\n  }\n}",
+        "options": {}
+      },
+      "id": "send-confirmation",
+      "name": "Send Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Order": {
+      "main": [
+        [
+          {
+            "node": "Generate Order ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Order ID": {
+      "main": [
+        [
+          {
+            "node": "Create Order Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Order Row": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-20T00:00:00.000Z",
+  "versionId": "1"
+}
+
+
