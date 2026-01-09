@@ -544,7 +544,7 @@ See [`INTEGRATION_TESTS.md`](../tests/INTEGRATION_TESTS.md) for detailed test ca
 ## Trade Facilitator Model
 
 **For hub-and-spoke architecture (single WABA orchestrating buyer-seller trades), see:**
-- [`TRADE_FACILITATOR_ARCHITECTURE.md`](./TRADE_FACILITATOR_ARCHITECTURE.md) - Complete Trade Facilitator architecture
+- [`TRADE_FACILITATOR_ARCHITECTURE.md`](./architecture/TRADE_FACILITATOR_ARCHITECTURE.md) - Complete Trade Facilitator architecture
 
 **Core Model:**
 - Single WABA as hub (all conversations through your business number)
@@ -592,8 +592,8 @@ See [`INTEGRATION_TESTS.md`](../tests/INTEGRATION_TESTS.md) for detailed test ca
 
 ## References
 
-- **Architecture**: [`ARCHITECTURE.md`](./ARCHITECTURE.md) - System design
-- **Trade Facilitator**: [`TRADE_FACILITATOR_ARCHITECTURE.md`](./TRADE_FACILITATOR_ARCHITECTURE.md) - Hub-and-spoke model
+- **Architecture**: [`ARCHITECTURE.md`](./core/ARCHITECTURE.md) - System design
+- **Trade Facilitator**: [`TRADE_FACILITATOR_ARCHITECTURE.md`](./architecture/TRADE_FACILITATOR_ARCHITECTURE.md) - Hub-and-spoke model
 - **Communication Rails**: See [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md) for API contracts (if exists)
 - **Analytics**: [`ANALYTICS_SCHEMA.md`](./ANALYTICS_SCHEMA.md) - Metrics tracking
 - **Test Scenarios**: [`../tests/test-scenarios.md`](../tests/test-scenarios.md) - Week 1 tests

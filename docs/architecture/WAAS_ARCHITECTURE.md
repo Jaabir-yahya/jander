@@ -4,7 +4,7 @@
 
 This document defines the correct layering for WhatsApp commerce platforms based on successful global implementations (India, Brazil, Nigeria, Kenya). This architecture separates concerns: truth (ERPNext), flow (n8n), and channels (WhatsApp/SMS).
 
-**Reference**: This extends [`TRADE_FACILITATOR_ARCHITECTURE.md`](./TRADE_FACILITATOR_ARCHITECTURE.md) with proper three-layer separation.
+**Reference**: This extends [`TRADE_FACILITATOR_ARCHITECTURE.md`](./architecture/TRADE_FACILITATOR_ARCHITECTURE.md) with proper three-layer separation.
 
 ---
 
@@ -787,9 +787,9 @@ Is it user interface (buttons, templates, flows)?
 
 ## References
 
-- **Trade Facilitator Architecture**: [`TRADE_FACILITATOR_ARCHITECTURE.md`](./TRADE_FACILITATOR_ARCHITECTURE.md)
+- **Trade Facilitator Architecture**: [`TRADE_FACILITATOR_ARCHITECTURE.md`](./architecture/TRADE_FACILITATOR_ARCHITECTURE.md)
 - **Integration Capabilities**: [`INTEGRATION_CAPABILITIES.md`](./INTEGRATION_CAPABILITIES.md)
-- **Build Plan**: [`BUILD_PLAN.md`](./BUILD_PLAN.md) - Stage-gated execution plan
+- **Build Plan**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) - Stage-gated execution plan
 - **Lifecycle Stages**: [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) - 5-stage maturity model
 
 ---

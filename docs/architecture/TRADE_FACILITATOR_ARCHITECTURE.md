@@ -4,7 +4,7 @@
 
 This architecture document defines "The Trade Facilitator" model: one central WhatsApp Business Account (WABA) as the hub, buyers and sellers on personal WhatsApp, with platform orchestrating flows, payments, and notifications while absorbing Meta's constraints and monetizing per successful trade.
 
-**Reference**: This document extends [`ARCHITECTURE.md`](./ARCHITECTURE.md) with the Trade Facilitator model. See [`BUILD_PLAN.md`](./BUILD_PLAN.md) for stage-gated execution plan.
+**Reference**: This document extends [`ARCHITECTURE.md`](./core/ARCHITECTURE.md) with the Trade Facilitator model. See [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) for stage-gated execution plan.
 
 ---
 
@@ -542,9 +542,9 @@ If Buyer confirms delivery:
 
 ## References
 
-- **Architecture**: [`ARCHITECTURE.md`](./ARCHITECTURE.md) - System design
+- **Architecture**: [`ARCHITECTURE.md`](./core/ARCHITECTURE.md) - System design
 - **Integration Capabilities**: [`INTEGRATION_CAPABILITIES.md`](./INTEGRATION_CAPABILITIES.md) - Integration requirements
-- **Build Plan**: [`BUILD_PLAN.md`](./BUILD_PLAN.md) - Stage-gated execution plan
+- **Build Plan**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) - Stage-gated execution plan
 - **Test Cases**: [`../tests/INTEGRATION_TESTS.md`](../tests/INTEGRATION_TESTS.md) - Integration tests
 
 ---

@@ -4,7 +4,7 @@
 
 This document serves as the contract between services. All integrations must match these schemas.
 
-**Reference**: See [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md) for architecture context and [`INTEGRATION_CAPABILITIES_MATRIX.md`](./INTEGRATION_CAPABILITIES_MATRIX.md) for integration requirements.
+**Reference**: See [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md) for architecture context and [`INTEGRATION_CAPABILITIES_MATRIX.md`](./INTEGRATION_CAPABILITIES_MATRIX.md) for integration requirements.
 
 ---
 
@@ -532,7 +532,7 @@ curl -X POST http://localhost:5678/webhook/mpesa/stk-callback \
 
 ## References
 
-- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md)
+- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md)
 - **Integration Capabilities**: [`INTEGRATION_CAPABILITIES_MATRIX.md`](./INTEGRATION_CAPABILITIES_MATRIX.md)
 - **Communication Rails**: See [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md) if exists
 

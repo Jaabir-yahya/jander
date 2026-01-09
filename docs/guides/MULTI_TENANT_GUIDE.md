@@ -4,7 +4,7 @@
 
 This guide explains how the native integrations wiring supports multiple SMEs, each with their own WABA, ERPNext, M-Pesa, and tax configuration.
 
-**Reference**: See [`NATIVE_INTEGRATIONS.md`](./NATIVE_INTEGRATIONS.md) for the complete wiring diagram.
+**Reference**: See [`NATIVE_INTEGRATIONS.md`](./architecture/NATIVE_INTEGRATIONS.md) for the complete wiring diagram.
 
 ---
 
@@ -319,7 +319,7 @@ CREATE POLICY trades_tenant_isolation ON trades
 4. **Import updated workflows** into n8n
 5. **Test end-to-end** with multiple tenants
 
-**See [`NATIVE_INTEGRATIONS.md`](./NATIVE_INTEGRATIONS.md) for complete wiring diagram.**
+**See [`NATIVE_INTEGRATIONS.md`](./architecture/NATIVE_INTEGRATIONS.md) for complete wiring diagram.**
 
 ---
 

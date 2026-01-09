@@ -57,13 +57,18 @@ jander/
 
 ## Documentation
 
-All documentation lives in `docs/` folder. **Update these 5 files, don't create new scattered docs.**
+**Start here:** [docs/00_START_HERE.md](./docs/00_START_HERE.md) - Master documentation index
 
-- [docs/README.md](./docs/README.md) - Start here
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) - Technical decisions
-- [docs/WORKFLOWS.md](./docs/WORKFLOWS.md) - Business processes
-- [docs/BUILD_PLAN.md](./docs/BUILD_PLAN.md) - Execution roadmap
-- [docs/CONTEXT.md](./docs/CONTEXT.md) - Research & evidence
+**Core Documents:**
+- [docs/core/PROJECT_MASTER.md](./docs/core/PROJECT_MASTER.md) - Complete project context
+- [docs/core/BUILD_PLAN.md](./docs/core/BUILD_PLAN.md) - Execution roadmap (Weeks 1-12)
+- [docs/core/ARCHITECTURE.md](./docs/core/ARCHITECTURE.md) - System design
+- [docs/core/WORKFLOWS.md](./docs/core/WORKFLOWS.md) - Business processes
+
+**For Tomorrow:**
+- [docs/guides/WEEK1_ACTION_PLAN.md](./docs/guides/WEEK1_ACTION_PLAN.md) ⭐ **Complete step-by-step guide**
+
+**See [docs/README.md](./docs/README.md) for full documentation structure.**
 
 ---
 

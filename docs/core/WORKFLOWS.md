@@ -2,7 +2,7 @@
 
 **End-to-end business processes, lifecycle stages, and Nairobi-specific adaptations.**
 
-**Reference**: This document cross-references the 7-stage lifecycle (catalog → order → payment → dispatch → delivery → accounting → repeat) with the 5-stage research pattern (Foundation → Containment → Integration → Maturity → Predictive). See [`BUILD_PLAN.md`](./BUILD_PLAN.md) for stage-gated execution plan and [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
+**Reference**: This document cross-references the 7-stage lifecycle (catalog → order → payment → dispatch → delivery → accounting → repeat) with the 5-stage research pattern (Foundation → Containment → Integration → Maturity → Predictive). See [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) for stage-gated execution plan and [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
 
 ---
 
@@ -279,7 +279,7 @@ Before you scale beyond 5–10 traders:
 
 ## References
 
-- **Master Blueprint**: [`BUILD_PLAN.md`](./BUILD_PLAN.md) - Stage-gated execution plan
+- **Master Blueprint**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) - Stage-gated execution plan
 - **Stage Definitions**: [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) - Detailed stage definitions and research citations
 - **Communication Rails**: [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md) - API contracts and data flows
 - **Analytics Schema**: [`ANALYTICS_SCHEMA.md`](./ANALYTICS_SCHEMA.md) - Metrics definitions and KPI tracking

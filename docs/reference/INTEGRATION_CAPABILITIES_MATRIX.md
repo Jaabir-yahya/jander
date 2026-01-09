@@ -446,10 +446,10 @@ Before marking each integration "done", verify:
 
 ## References
 
-- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md)
+- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md)
 - **Integration Capabilities**: [`INTEGRATION_CAPABILITIES.md`](./INTEGRATION_CAPABILITIES.md)
 - **First 7 Workflows**: [`FIRST_7_WORKFLOWS.md`](./FIRST_7_WORKFLOWS.md)
-- **Build Plan**: [`BUILD_PLAN.md`](./BUILD_PLAN.md)
+- **Build Plan**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md)
 
 ---
 

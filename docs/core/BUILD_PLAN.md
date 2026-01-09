@@ -992,8 +992,8 @@ CREATE TABLE analytics (
 
 - **For detailed stage definitions**: See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md)
 - **For communication rails**: See [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md)
-- **For technical architecture**: See [`ARCHITECTURE.md`](./ARCHITECTURE.md)
-- **For workflow details**: See [`WORKFLOWS.md`](./WORKFLOWS.md)
+- **For technical architecture**: See [`ARCHITECTURE.md`](./core/ARCHITECTURE.md)
+- **For workflow details**: See [`WORKFLOWS.md`](./core/WORKFLOWS.md)
 - **For research context**: See [`CONTEXT.md`](./CONTEXT.md)
 - **For Week 1 details**: See [`WEEK1_EXECUTION_PLAN.md`](./WEEK1_EXECUTION_PLAN.md)
 - **For template registry**: See [`TEMPLATE_REGISTRY.md`](./TEMPLATE_REGISTRY.md)

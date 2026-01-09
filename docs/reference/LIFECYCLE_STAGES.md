@@ -4,7 +4,7 @@
 
 Based on research across leading markets (India, Brazil, Kenya, Latin America, Southeast Asia), successful WhatsApp Business API integrations evolve through 5 distinct, repeatable lifecycle stages. This document provides detailed definitions for each stage.
 
-**Reference**: This document supports [`BUILD_PLAN.md`](./BUILD_PLAN.md), which is the master blueprint organized by these stages.
+**Reference**: This document supports [`BUILD_PLAN.md`](./core/BUILD_PLAN.md), which is the master blueprint organized by these stages.
 
 ---
 
@@ -410,7 +410,7 @@ Studies across India, Brazil, Nigeria, Kenya, Latin America, and Southeast Asia 
 
 ## References
 
-- **Master Blueprint**: [`BUILD_PLAN.md`](./BUILD_PLAN.md) - Stage-gated execution plan
+- **Master Blueprint**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) - Stage-gated execution plan
 - **Communication Rails**: [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md) - API contracts and data flows
 - **Week 1 Details**: [`WEEK1_EXECUTION_PLAN.md`](./WEEK1_EXECUTION_PLAN.md) - Day-by-day Stage 1 tasks
 - **Research Context**: [`CONTEXT.md`](./CONTEXT.md) - Failure modes and success patterns

@@ -4,9 +4,9 @@
 
 > **Note:** This document is referenced by `.cursor-rules` for AI-assisted development. Always update this file when making architectural changes.
 
-**Reference**: This document supports the 5-stage lifecycle in [`BUILD_PLAN.md`](./BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
+**Reference**: This document supports the 5-stage lifecycle in [`BUILD_PLAN.md`](./core/BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
 
-**WaaS Architecture**: For the three-layer architecture (ERPNext → n8n → Channels), see [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md). This document focuses on the current Trade Facilitator implementation.
+**WaaS Architecture**: For the three-layer architecture (ERPNext → n8n → Channels), see [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md). This document focuses on the current Trade Facilitator implementation.
 
 ---
 

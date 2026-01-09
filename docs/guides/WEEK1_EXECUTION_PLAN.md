@@ -21,7 +21,7 @@ This Week 1 plan plugs into your existing doc system:
 - **TEMPLATE_REGISTRY.md** – Stage 1 template governance system  
 - **COMMUNICATION_RAILS.md** – API contracts and data flows
 
-**Reference**: This file aligns with **Stage 1: Foundation** in [`BUILD_PLAN.md`](./BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
+**Reference**: This file aligns with **Stage 1: Foundation** in [`BUILD_PLAN.md`](./core/BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
 
 Keep this as the single Week 1 plan to avoid duplicate versions.
 
@@ -257,7 +257,7 @@ Revenue: High from growth SMEs (KSh 30K/mo × 5 = KSh 150K)
    - **Hack 3**: STK push + auto-match → ✅ Reconciliation pain gone?
 
 5. **Stage 1 Gate Review** (Before Week 2):
-   - Review Stage 1 gates in [`BUILD_PLAN.md`](./BUILD_PLAN.md):
+   - Review Stage 1 gates in [`BUILD_PLAN.md`](./core/BUILD_PLAN.md):
      - [ ] Webhook infrastructure operational
      - [ ] Template registry with 5+ templates approved
      - [ ] Delivery rate 90%+ (if Week 1 messages sent)

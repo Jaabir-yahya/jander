@@ -4,7 +4,7 @@
 
 Based on research: Stage 1 maturity marker requires template registry with approval workflow. This document tracks all templates, their approval status, versions, and performance.
 
-**Reference**: This document supports Stage 1 in [`BUILD_PLAN.md`](./BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for stage definitions.
+**Reference**: This document supports Stage 1 in [`BUILD_PLAN.md`](./core/BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for stage definitions.
 
 ---
 
@@ -570,7 +570,7 @@ Asante!
 
 ## References
 
-- **Stage 1 Requirements**: See [`BUILD_PLAN.md`](./BUILD_PLAN.md) Stage 1
+- **Stage 1 Requirements**: See [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) Stage 1
 - **Template Governance**: See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) Stage 1 definition
 - **Communication Rails**: See [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md) Rail 5 (Send Responses)
 

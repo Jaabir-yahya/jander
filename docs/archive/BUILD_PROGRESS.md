@@ -3,9 +3,9 @@
 **Current status: Building until human intervention needed**
 
 Following documentation as source of truth:
-- [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md) - Three-layer architecture
+- [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md) - Three-layer architecture
 - [`FIRST_7_WORKFLOWS.md`](./FIRST_7_WORKFLOWS.md) - n8n workflow priority
-- [`BUILD_PLAN.md`](./BUILD_PLAN.md) - Stage-gated execution plan
+- [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) - Stage-gated execution plan
 - [`WEEK1_EXECUTION_PLAN.md`](./WEEK1_EXECUTION_PLAN.md) - Week 1 day-by-day tasks
 
 ---

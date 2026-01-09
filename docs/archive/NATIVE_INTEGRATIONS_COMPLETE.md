@@ -4,7 +4,7 @@
 
 This document confirms that the native integrations wiring diagram is fully implemented and ready for use.
 
-**Reference**: See [`NATIVE_INTEGRATIONS.md`](./NATIVE_INTEGRATIONS.md) for the original wiring diagram.
+**Reference**: See [`NATIVE_INTEGRATIONS.md`](./architecture/NATIVE_INTEGRATIONS.md) for the original wiring diagram.
 
 ---
 

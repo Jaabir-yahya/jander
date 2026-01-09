@@ -2,7 +2,7 @@
 
 **Priority order for solo dev building WhatsApp-as-a-Service in Nairobi.**
 
-Based on the WaaS architecture principles in [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md). These workflows follow the rule: **n8n = orchestration, ERPNext = truth**.
+Based on the WaaS architecture principles in [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md). These workflows follow the rule: **n8n = orchestration, ERPNext = truth**.
 
 ---
 
@@ -423,8 +423,8 @@ If error:
 ---
 
 **Reference**: 
-- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md)
-- **Build Plan**: [`BUILD_PLAN.md`](./BUILD_PLAN.md)
+- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md)
+- **Build Plan**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md)
 
 ---
 

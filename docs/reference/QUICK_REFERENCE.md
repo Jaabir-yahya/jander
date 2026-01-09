@@ -175,12 +175,12 @@ Channels (WhatsApp/SMS) → n8n (Orchestration) → ERPNext (Truth)
 ## 📚 Documentation Map
 
 **Architecture:**
-- [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md) - Three-layer architecture
-- [`TRADE_FACILITATOR_ARCHITECTURE.md`](./TRADE_FACILITATOR_ARCHITECTURE.md) - Hub-and-spoke model
-- [`ARCHITECTURE.md`](./ARCHITECTURE.md) - Technical architecture
+- [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md) - Three-layer architecture
+- [`TRADE_FACILITATOR_ARCHITECTURE.md`](./architecture/TRADE_FACILITATOR_ARCHITECTURE.md) - Hub-and-spoke model
+- [`ARCHITECTURE.md`](./core/ARCHITECTURE.md) - Technical architecture
 
 **Execution:**
-- [`BUILD_PLAN.md`](./BUILD_PLAN.md) - Stage-gated plan (Weeks 1-12)
+- [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) - Stage-gated plan (Weeks 1-12)
 - [`WEEK1_EXECUTION_PLAN.md`](./WEEK1_EXECUTION_PLAN.md) - Week 1 tasks
 
 **Integration:**

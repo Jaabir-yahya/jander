@@ -4,7 +4,7 @@
 
 Based on lessons from failed WhatsApp-commerce implementations globally (India, Brazil, Nigeria, Kenya). This is the "anti-pattern" guide.
 
-**Reference**: This complements [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md) by explicitly calling out what NOT to build.
+**Reference**: This complements [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md) by explicitly calling out what NOT to build.
 
 ---
 
@@ -404,10 +404,10 @@ Based on lessons from failed WhatsApp-commerce implementations globally (India, 
 
 ## References
 
-- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md)
+- **WaaS Architecture**: [`WAAS_ARCHITECTURE.md`](./architecture/WAAS_ARCHITECTURE.md)
 - **First 7 Workflows**: [`FIRST_7_WORKFLOWS.md`](./FIRST_7_WORKFLOWS.md)
 - **Integration Capabilities Matrix**: [`INTEGRATION_CAPABILITIES_MATRIX.md`](./INTEGRATION_CAPABILITIES_MATRIX.md)
-- **Build Plan**: [`BUILD_PLAN.md`](./BUILD_PLAN.md)
+- **Build Plan**: [`BUILD_PLAN.md`](./core/BUILD_PLAN.md)
 
 ---
 

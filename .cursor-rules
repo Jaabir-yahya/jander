@@ -1,10 +1,12 @@
 # Nairobi WhatsApp Commerce - Cursor AI Rules (2026 Solo Dev)
 
 ## ALWAYS REFERENCE THESE FILES
-docs/ARCHITECTURE.md
-docs/WORKFLOWS.md  
-docs/BUILD_PLAN.md
-docs/CONTEXT.md
+docs/core/ARCHITECTURE.md
+docs/core/WORKFLOWS.md  
+docs/core/BUILD_PLAN.md
+docs/core/PROJECT_MASTER.md
+docs/reference/CONTEXT.md
+docs/guides/WEEK1_ACTION_PLAN.md (for tomorrow's tasks)
 
 ## WEEK-BY-WEEK CONTEXT
 Current week: 1

@@ -4,7 +4,7 @@
 
 Based on research: Stage 4 maturity marker requires analytics instrumentation (message → action → outcome tracking, not just "sent"). This document defines the analytics schema and KPIs for each stage.
 
-**Reference**: This document supports Stage 4 in [`BUILD_PLAN.md`](./BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for stage definitions.
+**Reference**: This document supports Stage 4 in [`BUILD_PLAN.md`](./core/BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for stage definitions.
 
 ---
 
@@ -432,7 +432,7 @@ ORDER BY month DESC;
 
 ## References
 
-- **Stage 4 Requirements**: See [`BUILD_PLAN.md`](./BUILD_PLAN.md) Stage 4
+- **Stage 4 Requirements**: See [`BUILD_PLAN.md`](./core/BUILD_PLAN.md) Stage 4
 - **Analytics Research**: See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) Stage 4 definition
 - **Communication Rails**: See [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md) for data flow tracking
 
