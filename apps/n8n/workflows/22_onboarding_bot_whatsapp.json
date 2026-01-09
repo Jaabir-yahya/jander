@@ -1,0 +1,271 @@
+{
+  "name": "22_onboarding_bot_whatsapp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "onboarding",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "WhatsApp Onboarding Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "onboarding-bot",
+      "notes": "Trigger: WhatsApp message 'I want Nairobi Super Suite'. Reference: docs/SPEC_COMPLIANCE_ACTION_PLAN.md - Emergency Support Infrastructure"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{$json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || $json.from || $json.phone}}",
+              "type": "string"
+            },
+            {
+              "id": "message_text",
+              "name": "message_text",
+              "value": "={{$json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || $json.message || $json.text || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "message_id",
+              "name": "message_id",
+              "value": "={{$json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || $json.message_id || $json.id}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-message",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Extract phone, message text, and message ID from webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-trigger",
+              "leftValue": "={{$json.message_text.toLowerCase()}}",
+              "rightValue": "i want nairobi super suite",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-trigger-phrase",
+      "name": "Check Trigger Phrase",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Check if message contains onboarding trigger phrase"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenants?phone=eq.{{$json.phone}}&select=id",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-existing-tenant",
+      "name": "Check Existing Tenant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Check if phone number already has an account"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-exists",
+              "leftValue": "={{Array.isArray($json) && $json.length > 0}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-if-exists",
+      "name": "Tenant Already Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Check if tenant already has account"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "send-already-exists",
+      "name": "Send Already Exists Message",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "notes": "Send message that account already exists"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format onboarding welcome message\nconst input = $('Extract Message Data').first().json;\n\nconst message = `👋 Welcome to Nairobi Super Suite!\n\nI'll help you set up your automated revenue engine in just 2 minutes.\n\n📋 I need 3 pieces of information:\n1️⃣ Business name\n2️⃣ Instagram handle (e.g., @yourbusiness)\n3️⃣ M-Pesa till number (5 digits)\n\n💬 Please reply with:\n\"Business: [Your Business Name]\"\n\nLet's get started! 🚀`;\n\nreturn {\n  phone: input.phone,\n  message: message,\n  onboarding_state: 'waiting_business_name',\n  conversation_id: input.message_id\n};"
+      },
+      "id": "format-welcome",
+      "name": "Format Welcome Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200],
+      "notes": "Format welcome message and set onboarding state"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "send-welcome",
+      "name": "Send Welcome Message",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "notes": "Send welcome message to start onboarding"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/store_onboarding_state",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{\n  phone: $json.phone,\n  state: $json.onboarding_state,\n  data: {}\n}}}",
+        "options": {}
+      },
+      "id": "store-state",
+      "name": "Store Onboarding State",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200],
+      "notes": "Store onboarding state (or use Supabase storage/Redis if available)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { success: true, message: 'Onboarding started' } }}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 300],
+      "notes": "Respond to webhook"
+    }
+  ],
+  "connections": {
+    "WhatsApp Onboarding Webhook": {
+      "main": [[{"node": "Extract Message Data", "type": "main", "index": 0}]]
+    },
+    "Extract Message Data": {
+      "main": [[{"node": "Check Trigger Phrase", "type": "main", "index": 0}]]
+    },
+    "Check Trigger Phrase": {
+      "main": [
+        [{"node": "Check Existing Tenant", "type": "main", "index": 0}],
+        [{"node": "Respond Success", "type": "main", "index": 0}]
+      ]
+    },
+    "Check Existing Tenant": {
+      "main": [[{"node": "Tenant Already Exists?", "type": "main", "index": 0}]]
+    },
+    "Tenant Already Exists?": {
+      "main": [
+        [{"node": "Send Already Exists Message", "type": "main", "index": 0}],
+        [{"node": "Format Welcome Message", "type": "main", "index": 0}]
+      ]
+    },
+    "Format Welcome Message": {
+      "main": [[{"node": "Send Welcome Message", "type": "main", "index": 0}]]
+    },
+    "Send Welcome Message": {
+      "main": [[{"node": "Store Onboarding State", "type": "main", "index": 0}]]
+    },
+    "Store Onboarding State": {
+      "main": [[{"node": "Respond Success", "type": "main", "index": 0}]]
+    },
+    "Send Already Exists Message": {
+      "main": [[{"node": "Respond Success", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Onboarding Bot: Automated WhatsApp onboarding for new tenants. Collects business name, Instagram handle, M-Pesa till. Reference: docs/SPEC_COMPLIANCE_ACTION_PLAN.md - Emergency Support Infrastructure"
+}
+

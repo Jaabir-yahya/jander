@@ -1,0 +1,353 @@
+{
+  "name": "23_support_triage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Support Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "support-triage",
+      "notes": "Trigger: WhatsApp message to support number. Reference: docs/SPEC_COMPLIANCE_ACTION_PLAN.md - Emergency Support Infrastructure"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{$json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || $json.from || $json.phone}}",
+              "type": "string"
+            },
+            {
+              "id": "message_text",
+              "name": "message_text",
+              "value": "={{$json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || $json.message || $json.text || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "message_id",
+              "name": "message_id",
+              "value": "={{$json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || $json.message_id || $json.id}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-message",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Extract phone, message text, and message ID"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-urgent",
+              "leftValue": "={{$json.message_text.toLowerCase()}}",
+              "rightValue": "emergency|broken|not working|urgent|critical",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-urgent",
+      "name": "Check Urgent Keywords",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Check if message contains urgent keywords"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/search_knowledge_base",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{\n  p_query: $json.message_text,\n  p_category: null,\n  p_tags: null\n}}}",
+        "options": {}
+      },
+      "id": "search-knowledge-base",
+      "name": "Search Knowledge Base",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200],
+      "notes": "Search knowledge base for matching articles"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-results",
+              "leftValue": "={{Array.isArray($json) && $json.length > 0}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-results",
+      "name": "Found Articles?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 200],
+      "notes": "Check if knowledge base search found articles"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format knowledge base article response\nconst articles = $json || [];\nconst topArticle = articles[0];\nconst messageData = $('Extract Message').first().json;\n\nif (!topArticle) {\n  return {\n    found: false,\n    phone: messageData.phone,\n    message: null\n  };\n}\n\nconst articleUrl = `${process.env.DASHBOARD_URL || 'https://dashboard.nairobisupersuite.com'}/kb/${topArticle.slug}`;\n\nconst message = `📚 Found this article that might help:\n\n*${topArticle.title}*\n\n${topArticle.summary}\n\n🔗 Read full article: ${articleUrl}\n\nWas this helpful? Reply YES or NO`;\n\nreturn {\n  found: true,\n  phone: messageData.phone,\n  message: message,\n  article_id: topArticle.id,\n  article_title: topArticle.title\n};"
+      },
+      "id": "format-article-response",
+      "name": "Format Article Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 100],
+      "notes": "Format knowledge base article as WhatsApp message"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "send-article",
+      "name": "Send Article",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1450, 100],
+      "notes": "Send knowledge base article to customer"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/support_success_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{\n  tenant_id: null,\n  error_type: 'support_query',\n  knowledge_base_article_id: $json.article_id,\n  resolved: false\n}}}",
+        "options": {}
+      },
+      "id": "log-support-query",
+      "name": "Log Support Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 100],
+      "notes": "Log support query for analytics"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/community_questions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{\n  tenant_id: null,\n  question: $('Extract Message').first().json.message_text,\n  asked_by_phone: $('Extract Message').first().json.phone,\n  status: 'open'\n}}}",
+        "options": {}
+      },
+      "id": "create-community-question",
+      "name": "Create Community Question",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300],
+      "notes": "Add question to community Q&A if no article found"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format community question response\nconst messageData = $('Extract Message').first().json;\n\nconst message = `💬 Thanks for your question!\n\nI've added it to our community Q&A. Other business owners might have the same question.\n\nYou'll get a notification when someone answers.\n\nIn the meantime, check our knowledge base: ${process.env.DASHBOARD_URL || 'https://dashboard.nairobisupersuite.com'}/kb\n\nOr reply \"URGENT\" if this needs immediate attention.`;\n\nreturn {\n  phone: messageData.phone,\n  message: message\n};"
+      },
+      "id": "format-community-response",
+      "name": "Format Community Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "notes": "Format response for community question"
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp_v2",
+        "options": {}
+      },
+      "id": "send-community-response",
+      "name": "Send Community Response",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "notes": "Send community Q&A response"
+    },
+    {
+      "parameters": {
+        "workflowId": "20_support_escalation_router",
+        "options": {}
+      },
+      "id": "escalate-urgent",
+      "name": "Escalate Urgent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [850, 400],
+      "notes": "Escalate urgent support requests to human agents"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ { success: true, handled: true } }}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 300],
+      "notes": "Respond to webhook"
+    }
+  ],
+  "connections": {
+    "Support Webhook": {
+      "main": [[{"node": "Extract Message", "type": "main", "index": 0}]]
+    },
+    "Extract Message": {
+      "main": [[{"node": "Check Urgent Keywords", "type": "main", "index": 0}]]
+    },
+    "Check Urgent Keywords": {
+      "main": [
+        [{"node": "Escalate Urgent", "type": "main", "index": 0}],
+        [{"node": "Search Knowledge Base", "type": "main", "index": 0}]
+      ]
+    },
+    "Search Knowledge Base": {
+      "main": [[{"node": "Found Articles?", "type": "main", "index": 0}]]
+    },
+    "Found Articles?": {
+      "main": [
+        [{"node": "Format Article Response", "type": "main", "index": 0}],
+        [{"node": "Create Community Question", "type": "main", "index": 0}]
+      ]
+    },
+    "Format Article Response": {
+      "main": [[{"node": "Send Article", "type": "main", "index": 0}]]
+    },
+    "Send Article": {
+      "main": [[{"node": "Log Support Query", "type": "main", "index": 0}]]
+    },
+    "Log Support Query": {
+      "main": [[{"node": "Respond Success", "type": "main", "index": 0}]]
+    },
+    "Create Community Question": {
+      "main": [[{"node": "Format Community Response", "type": "main", "index": 0}]]
+    },
+    "Format Community Response": {
+      "main": [[{"node": "Send Community Response", "type": "main", "index": 0}]]
+    },
+    "Send Community Response": {
+      "main": [[{"node": "Respond Success", "type": "main", "index": 0}]]
+    },
+    "Escalate Urgent": {
+      "main": [[{"node": "Respond Success", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "Support Triage: Auto-route support queries to knowledge base first, then community Q&A. Only escalate urgent keywords. Reference: docs/SPEC_COMPLIANCE_ACTION_PLAN.md - Emergency Support Infrastructure"
+}
+
