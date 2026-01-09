@@ -22,17 +22,35 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 - `07_send_payment_confirmation.json` - Payment confirmation
 
 ### Version 2 (Refactored - Uses Native Nodes) ✅ RECOMMENDED
+- `00_lookup_tenant_config.json` - **NEW** Utility workflow for tenant config lookup
 - `01_classify_message_v2.json` - Native HTTP Request → Supabase
 - `03_send_whatsapp_v2.json` - Native HTTP Request → WhatsApp API
 - `04_send_sms_fallback_v2.json` - Native HTTP Request → SMS API
 - `06_reconcile_payment_v2.json` - Native HTTP Request → Supabase + WhatsApp
 - `07_send_payment_confirmation_v2.json` - Native HTTP Request → WhatsApp + Supabase
+- `08_submit_to_etims.json` - **NEW** eTIMS/KRA invoice submission
+- `09_multi_rail_payment.json` - **NEW** Multi-rail payment routing (M-Pesa/PesaLink/Airtel)
 
 **Note**: Workflows 2 and 5 don't have v2 versions because they already use native nodes.
 
 ---
 
 ## Workflow Priority Order
+
+### ✅ Workflow 0: `00_lookup_tenant_config` (Utility)
+**Status**: ✅ Created  
+**Purpose**: Reusable utility for tenant config lookup (multi-tenant support)  
+**Input**: tenant_id (from query param) OR phone (for lookup)  
+**Output**: tenant_config object with all SME configuration
+
+**Key Features**:
+- Native HTTP Request → Supabase
+- Supports tenant_id from query param or phone lookup
+- Returns full tenant config (WABA, ERPNext, M-Pesa, tax, payment rails)
+
+**Why First**: All other workflows need tenant config for multi-tenant support.
+
+---
 
 ### ✅ Workflow 1: `01_classify_message_v2`
 **Status**: ✅ Created (v2)  
@@ -136,6 +154,38 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 - Parallel notifications (buyer + seller)
 
 **Why Seventh**: User trust depends on transparency. Always confirm payments.
+
+---
+
+### ✅ Workflow 8: `08_submit_to_etims`
+**Status**: ✅ Created  
+**Purpose**: Submit invoice to KRA eTIMS/OSCU for tax compliance  
+**Input**: tenant_id, invoice_id  
+**Output**: kra_invoice_id, qr_code, validation_code
+
+**Key Features**:
+- Native HTTP Request → KRA OSCU endpoint
+- Extracts tax config from tenant_config
+- Stores QR code and KRA invoice ID in invoice record
+- Automatic logging to message_logs
+
+**Why Eighth**: Tax compliance is mandatory in Kenya. Every paid invoice must be submitted to KRA.
+
+---
+
+### ✅ Workflow 9: `09_multi_rail_payment`
+**Status**: ✅ Created  
+**Purpose**: Route payment to highest priority enabled payment rail  
+**Input**: tenant_id, order_id, amount, customer_phone  
+**Output**: payment_request_id, rail_type
+
+**Key Features**:
+- Native HTTP Request → Payment rail APIs (M-Pesa, PesaLink, Airtel Money)
+- Priority-based routing (highest priority enabled rail selected)
+- Supports multiple payment rails per tenant
+- Automatic fallback if primary rail fails
+
+**Why Ninth**: Nairobi SMEs need multiple payment options. M-Pesa is primary, but PesaLink and Airtel Money provide alternatives.
 
 ---
 

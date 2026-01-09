@@ -1,0 +1,468 @@
+{
+  "name": "09_multi_rail_payment",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "tenant_id",
+              "name": "tenant_id",
+              "value": "={{$json.tenant_id}}",
+              "type": "string"
+            },
+            {
+              "id": "order_id",
+              "name": "order_id",
+              "value": "={{$json.order_id}}",
+              "type": "string"
+            },
+            {
+              "id": "amount",
+              "name": "amount",
+              "value": "={{$json.amount}}",
+              "type": "number"
+            },
+            {
+              "id": "customer_phone",
+              "name": "customer_phone",
+              "value": "={{$json.customer_phone}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenant_config?tenant_id=eq.{{$json.tenant_id}}&select=payment_rails&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-payment-rails",
+      "name": "Get Payment Rails Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Select active payment rail by priority\nconst tenantConfig = $('Get Payment Rails Config').first().json[0];\nconst input = $('Extract Input').first().json;\n\nif (!tenantConfig || !tenantConfig.payment_rails) {\n  return {\n    error: 'Payment rails not configured',\n    selected_rail: null\n  };\n}\n\n// Filter enabled rails and sort by priority\nconst enabledRails = tenantConfig.payment_rails\n  .filter(rail => rail.enabled === true)\n  .sort((a, b) => (a.priority || 999) - (b.priority || 999));\n\nif (enabledRails.length === 0) {\n  return {\n    error: 'No enabled payment rails found',\n    selected_rail: null\n  };\n}\n\n// Select first enabled rail (highest priority)\nconst selectedRail = enabledRails[0];\n\nreturn {\n  selected_rail: selectedRail,\n  order_id: input.order_id,\n  amount: input.amount,\n  customer_phone: input.customer_phone,\n  tenant_id: input.tenant_id\n};"
+      },
+      "id": "select-payment-rail",
+      "name": "Select Payment Rail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "rail-type-mpesa",
+              "leftValue": "={{$json.selected_rail.rail_type}}",
+              "rightValue": "mpesa",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-by-rail-type",
+      "name": "Route by Rail Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [850, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "rail-type-mpesa",
+              "leftValue": "={{$json.selected_rail.rail_type}}",
+              "rightValue": "mpesa",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "rail-type-pesalink",
+              "leftValue": "={{$json.selected_rail.rail_type}}",
+              "rightValue": "pesalink",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "rail-type-airtel",
+              "leftValue": "={{$json.selected_rail.rail_type}}",
+              "rightValue": "airtel_money",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenant_config?tenant_id=eq.{{$json.tenant_id}}&select=mpesa_shortcode,mpesa_passkey,mpesa_consumer_key,mpesa_consumer_secret&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-mpesa-config",
+      "name": "Get M-Pesa Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate M-Pesa STK Push password\nconst config = $('Get M-Pesa Config').first().json[0];\nconst input = $('Select Payment Rail').first().json;\n\nconst shortcode = config.mpesa_shortcode;\nconst passkey = config.mpesa_passkey;\nconst timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3); // YYYYMMDDHHmmss\n\n// Generate password: Base64(Shortcode + Passkey + Timestamp)\nconst password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');\n\nreturn {\n  BusinessShortCode: shortcode,\n  Password: password,\n  Timestamp: timestamp,\n  TransactionType: 'CustomerPayBillOnline',\n  Amount: input.amount,\n  PartyA: input.customer_phone.replace(/\\+/g, '').replace(/^254/, '254'),\n  PartyB: shortcode,\n  PhoneNumber: input.customer_phone.replace(/\\+/g, '').replace(/^254/, '254'),\n  CallBackURL: `${process.env.N8N_BASE_URL || 'https://your-n8n-instance.com'}/webhook/mpesa-callback?tenant_id=${input.tenant_id}`,\n  AccountReference: input.order_id,\n  TransactionDesc: `Order payment for ${input.order_id}`,\n  consumer_key: config.mpesa_consumer_key,\n  consumer_secret: config.mpesa_consumer_secret\n};"
+      },
+      "id": "prepare-mpesa-stk",
+      "name": "Prepare M-Pesa STK Push",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DARAJA_BASE_URL || 'https://api.safaricom.co.ke'}}/mpesa/stkpush/v1/processrequest",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "BusinessShortCode",
+              "value": "={{$json.BusinessShortCode}}"
+            },
+            {
+              "name": "Password",
+              "value": "={{$json.Password}}"
+            },
+            {
+              "name": "Timestamp",
+              "value": "={{$json.Timestamp}}"
+            },
+            {
+              "name": "TransactionType",
+              "value": "={{$json.TransactionType}}"
+            },
+            {
+              "name": "Amount",
+              "value": "={{$json.Amount}}"
+            },
+            {
+              "name": "PartyA",
+              "value": "={{$json.PartyA}}"
+            },
+            {
+              "name": "PartyB",
+              "value": "={{$json.PartyB}}"
+            },
+            {
+              "name": "PhoneNumber",
+              "value": "={{$json.PhoneNumber}}"
+            },
+            {
+              "name": "CallBackURL",
+              "value": "={{$json.CallBackURL}}"
+            },
+            {
+              "name": "AccountReference",
+              "value": "={{$json.AccountReference}}"
+            },
+            {
+              "name": "TransactionDesc",
+              "value": "={{$json.TransactionDesc}}"
+            }
+          ]
+        },
+        "options": {
+          "authentication": {
+            "username": "={{$json.consumer_key}}",
+            "password": "={{$json.consumer_secret}}"
+          }
+        }
+      },
+      "id": "send-mpesa-stk",
+      "name": "Send M-Pesa STK Push",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/tenant_config?tenant_id=eq.{{$json.tenant_id}}&select=payment_rails&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-pesalink-config",
+      "name": "Get PesaLink Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.selected_rail.pesalink_api_endpoint || 'https://api.pesalink.co.ke/v1/payments'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.selected_rail.api_token}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "account_number",
+              "value": "={{$json.selected_rail.account_number}}"
+            },
+            {
+              "name": "amount",
+              "value": "={{$json.amount}}"
+            },
+            {
+              "name": "reference",
+              "value": "={{$json.order_id}}"
+            },
+            {
+              "name": "callback_url",
+              "value": "={{process.env.N8N_BASE_URL || 'https://your-n8n-instance.com'}}/webhook/pesalink-callback?tenant_id={{$json.tenant_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-pesalink",
+      "name": "Send PesaLink Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.selected_rail.airtel_api_endpoint || 'https://api.airtelmoney.co.ke/v1/payments'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.selected_rail.api_token}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "merchant_code",
+              "value": "={{$json.selected_rail.merchant_code}}"
+            },
+            {
+              "name": "amount",
+              "value": "={{$json.amount}}"
+            },
+            {
+              "name": "reference",
+              "value": "={{$json.order_id}}"
+            },
+            {
+              "name": "callback_url",
+              "value": "={{process.env.N8N_BASE_URL || 'https://your-n8n-instance.com'}}/webhook/airtel-callback?tenant_id={{$json.tenant_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-airtel",
+      "name": "Send Airtel Money Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 600]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "success",
+              "name": "success",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "rail_type",
+              "name": "rail_type",
+              "value": "={{$('Select Payment Rail').first().json.selected_rail.rail_type}}"
+            },
+            {
+              "id": "payment_request_id",
+              "name": "payment_request_id",
+              "value": "={{$json.CheckoutRequestID || $json.request_id || $json.transaction_id}}"
+            },
+            {
+              "id": "order_id",
+              "name": "order_id",
+              "value": "={{$('Extract Input').first().json.order_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Extract Input": {
+      "main": [[{"node": "Get Payment Rails Config", "type": "main", "index": 0}]]
+    },
+    "Get Payment Rails Config": {
+      "main": [[{"node": "Select Payment Rail", "type": "main", "index": 0}]]
+    },
+    "Select Payment Rail": {
+      "main": [[{"node": "Route by Rail Type", "type": "main", "index": 0}]]
+    },
+    "Route by Rail Type": {
+      "main": [
+        [{"node": "Get M-Pesa Config", "type": "main", "index": 0}],
+        [{"node": "Get PesaLink Config", "type": "main", "index": 0}],
+        [{"node": "Send Airtel Money Payment", "type": "main", "index": 0}]
+      ]
+    },
+    "Get M-Pesa Config": {
+      "main": [[{"node": "Prepare M-Pesa STK Push", "type": "main", "index": 0}]]
+    },
+    "Prepare M-Pesa STK Push": {
+      "main": [[{"node": "Send M-Pesa STK Push", "type": "main", "index": 0}]]
+    },
+    "Send M-Pesa STK Push": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    },
+    "Get PesaLink Config": {
+      "main": [[{"node": "Send PesaLink Payment", "type": "main", "index": 0}]]
+    },
+    "Send PesaLink Payment": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    },
+    "Send Airtel Money Payment": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "✅ NATIVE: Multi-rail payment routing using native n8n HTTP Request nodes. Supports M-Pesa, PesaLink, Airtel Money. See docs/NATIVE_INTEGRATIONS.md"
+}
+
