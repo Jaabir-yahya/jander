@@ -24,13 +24,25 @@ Build a WhatsApp-first commerce system for Nairobi informal traders (Gikomba, Ea
 
 ## Documentation Structure
 
-This project uses 5 main reusable documents that get updated as we build:
+This project uses core reusable documents that get updated as we build:
 
+**Core Documents:**
 1. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System design, tech stack, data schema, integrations
 2. **[WORKFLOWS.md](./WORKFLOWS.md)** - Business processes, user journeys, lifecycle stages
-3. **[BUILD_PLAN.md](./BUILD_PLAN.md)** - Week-by-week execution plan, milestones, checklists
+3. **[BUILD_PLAN.md](./BUILD_PLAN.md)** - Stage-gated 5-stage lifecycle execution plan, milestones, checklists
 4. **[CONTEXT.md](./CONTEXT.md)** - Research findings, failure modes, Nairobi adaptations, evidence
 5. **[WEEK1_EXECUTION_PLAN.md](./WEEK1_EXECUTION_PLAN.md)** - Detailed Week 1 execution plan with reverse-pyramid model strategy
+
+**Supporting Documents:**
+6. **[WAAS_ARCHITECTURE.md](./WAAS_ARCHITECTURE.md)** - **Three-layer architecture: ERPNext → n8n → Channels (WhatsApp/SMS)**
+7. **[TRADE_FACILITATOR_ARCHITECTURE.md](./TRADE_FACILITATOR_ARCHITECTURE.md)** - Hub-and-spoke model: Single WABA orchestrates trades between buyers and sellers
+8. **[INTEGRATION_CAPABILITIES_MATRIX.md](./INTEGRATION_CAPABILITIES_MATRIX.md)** - Detailed capability matrix with testing checklists (MUST-HAVE → NICE-TO-HAVE)
+9. **[INTEGRATION_CAPABILITIES.md](./INTEGRATION_CAPABILITIES.md)** - Maximum capabilities required from each integration for automation and testing
+10. **[FIRST_7_WORKFLOWS.md](./FIRST_7_WORKFLOWS.md)** - Priority order for n8n workflows (build order for solo dev)
+11. **[DO_NOT_BUILD.md](./DO_NOT_BUILD.md)** - Anti-patterns guide (things that waste months - save 6-12 months)
+12. **[LIFECYCLE_STAGES.md](./LIFECYCLE_STAGES.md)** - Detailed 5-stage lifecycle definitions with research citations
+13. **[TEMPLATE_REGISTRY.md](./TEMPLATE_REGISTRY.md)** - Template governance system for Stage 1 foundation
+14. **[ANALYTICS_SCHEMA.md](./ANALYTICS_SCHEMA.md)** - Metrics definitions and KPI tracking structure
 
 **Week 1 Focus**: See [WEEK1_EXECUTION_PLAN.md](./WEEK1_EXECUTION_PLAN.md) for comprehensive Day 1–5 tasks, evidence-based approach from India/Nigeria/Brazil, and reverse-pyramid model (1 growth SME → 10 Eastleigh micro-sellers).
 
@@ -43,10 +55,11 @@ This project uses 5 main reusable documents that get updated as we build:
 ## Quick Start
 
 1. Read [WEEK1_EXECUTION_PLAN.md](./WEEK1_EXECUTION_PLAN.md) for detailed Week 1 tasks and strategy
-2. Review [BUILD_PLAN.md](./BUILD_PLAN.md) for overall week-by-week roadmap
+2. Review [BUILD_PLAN.md](./BUILD_PLAN.md) for overall stage-gated roadmap
 3. Review [ARCHITECTURE.md](./ARCHITECTURE.md) for system design decisions
 4. Understand [WORKFLOWS.md](./WORKFLOWS.md) for business processes
 5. Reference [CONTEXT.md](./CONTEXT.md) for why decisions were made (evidence from India/Nigeria/Brazil)
+6. Check [INTEGRATION_CAPABILITIES.md](./INTEGRATION_CAPABILITIES.md) for integration requirements and tests
 
 ## Weekly Research & Validation
 

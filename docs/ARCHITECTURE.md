@@ -4,27 +4,51 @@
 
 > **Note:** This document is referenced by `.cursor-rules` for AI-assisted development. Always update this file when making architectural changes.
 
+**Reference**: This document supports the 5-stage lifecycle in [`BUILD_PLAN.md`](./BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
+
+**WaaS Architecture**: For the three-layer architecture (ERPNext → n8n → Channels), see [`WAAS_ARCHITECTURE.md`](./WAAS_ARCHITECTURE.md). This document focuses on the current Trade Facilitator implementation.
+
 ---
 
-## Tech Stack Evolution
+## Stage-Gated Architecture Evolution
 
-### Phase 1: MVP (Weeks 1–4)
-- **Backend:** Google Sheets → Airtable (if multi-staff needed)
-- **Automation:** n8n (free tier)
-- **WhatsApp:** WhatsApp Business Cloud API
-- **Payment:** M-Pesa Daraja (Sandbox → Live)
+### Stage 1: Foundation (Weeks 1–2)
+- **Backend:** Google Sheets (Data capture, fast iteration)
+- **Automation:** n8n (Simple triggers, webhook → database)
+- **WhatsApp:** SMSLeopard WhatsApp Business API (Webhook gateway)
+- **Payment:** M-Pesa Daraja (Sandbox → Live STK push)
+- **Template Governance:** Template registry system (5+ pre-approved templates)
+- **Delivery Monitoring:** WhatsApp API delivery status tracking (target: 90%+)
 
-### Phase 2: Production (Weeks 5–8)
-- **Backend:** Supabase (Postgres)
-- **Migration:** Whalesync (Google Sheets ↔ Supabase)
-- **WhatsApp:** WhatsApp Business Cloud API (live)
-- **Payment:** M-Pesa Daraja (live)
-- **Automation:** n8n
+### Stage 2: Containment (Weeks 3–4)
+- **Backend:** Google Sheets (Context storage, conversation history)
+- **Automation:** n8n (Intent routing, bot responses)
+- **WhatsApp:** SMSLeopard WhatsApp Business API (Bot responses, human handoff)
+- **Payment:** M-Pesa Daraja (Retry logic, payment links)
+- **Intent Detection:** Keyword-based classification (Stage 2), ML-enhanced (Stage 5)
 
-### Phase 3: Scale (Weeks 9–12, Optional)
-- **Backend:** Supabase + ERPNext/Frappe
-- **ERP Integration:** API bridge (Supabase → ERPNext)
-- **Extended:** eTIMS compliance, multi-location stock
+### Stage 3: Integration (Weeks 5–8)
+- **Backend:** Supabase (Primary database, Postgres)
+- **Migration:** Whalesync (Google Sheets ↔ Supabase dual-write)
+- **Automation:** n8n (Multi-step funnels, post-purchase sequences)
+- **WhatsApp:** SMSLeopard WhatsApp Business API (Sequences, cart recovery)
+- **Payment:** M-Pesa Daraja (Full reconciliation, retry logic)
+- **ERP Integration:** ERPNext API bridge (Optional, Week 9+)
+
+### Stage 4: Maturity (Weeks 9–12)
+- **Backend:** Supabase + ERPNext/Frappe (Analytics DB, OMS)
+- **Automation:** n8n (Analytics hooks, A/B testing)
+- **WhatsApp:** SMSLeopard WhatsApp Business API (A/B tested templates)
+- **Payment:** M-Pesa Daraja (Analytics tracking)
+- **Template Backlog:** 10-15 templates per workflow domain (40-60 total)
+- **Analytics:** Message → Action → Outcome tracking (see [`ANALYTICS_SCHEMA.md`](./ANALYTICS_SCHEMA.md))
+
+### Stage 5: Predictive (Weeks 13+)
+- **Backend:** Supabase + ERPNext (Predictive data, AI integration)
+- **Automation:** n8n (AI integration, proactive triggers)
+- **WhatsApp:** SMSLeopard WhatsApp Business API (Proactive notifications)
+- **Payment:** M-Pesa Daraja (Predictive retry logic)
+- **AI Integration:** Embeddings-based intent classification, context summarization
 
 ---
 
@@ -186,10 +210,42 @@ n8n (Automation Engine - Core Infrastructure)
 ```
 
 **Why SMSLeopard (Not Direct Meta):**
-- Direct Meta access restricted in Kenya (2025-2026)
-- SMSLeopard = Official Meta Partner with webhook-native architecture
-- Same API spec as Meta (drop-in replacement)
-- Purpose: Webhook gateway for automation, NOT bulk messaging
+
+**Current Choice (SMSLeopard):**
+- Direct Meta WhatsApp Business Cloud API access is **restricted in Kenya (2025-2026)**
+- SMSLeopard = Official Meta Business Solution Provider (BSP) with local Kenya support
+- Same API spec as Meta's WhatsApp Business API - drop-in replacement
+- Webhook-native architecture built for automation (not just bulk messaging)
+- Faster template approval through BSPs
+- Local support team for faster issue resolution
+- Cost: KSh 1,999/mo starter (10K messages) - platform cost, not per-message
+
+**When to Use Direct Meta:**
+- If Meta direct access becomes available in Kenya
+- If you need advanced features only available in direct API
+- If cost optimization requires direct API (lower per-message costs at scale)
+- If building for global deployment beyond Kenya
+
+**Migration Path:** Architecture supports both providers via environment variable. Same webhook structure, same API patterns. Swap provider by changing `WHATSAPP_PROVIDER` env var.
+
+**Provider Selection:**
+```javascript
+// apps/whatsapp-business/config.js
+const WHATSAPP_PROVIDER = process.env.WHATSAPP_PROVIDER || 'smsleopard';
+
+const providers = {
+  smsleopard: {
+    apiBaseUrl: 'https://api.smsleopard.co.ke',
+    webhookUrl: 'https://api.smsleopard.co.ke/webhook',
+    // Same API spec as Meta
+  },
+  meta: {
+    apiBaseUrl: 'https://graph.facebook.com/v18.0',
+    webhookUrl: 'https://graph.facebook.com/v18.0/webhook',
+    // Meta's official API
+  }
+};
+```
 
 **Setup:**
 1. Sign up at https://smsleopard.co.ke/whatsapp-business.html
@@ -245,6 +301,44 @@ n8n (Automation Engine - Core Infrastructure)
      - "Your delivery is on the way. Track here: {{delivery_url}}"
 
 **Cost:** KSh 1,999/mo starter (10K messages) - covers Week 12 goal
+
+### Template Governance System (Stage 1 Requirement)
+
+**Reference**: See [`TEMPLATE_REGISTRY.md`](./TEMPLATE_REGISTRY.md) for complete template registry.
+
+**Template Approval Workflow**:
+1. Create template content with variables
+2. Submit to SMSLeopard/Meta dashboard for approval
+3. Track approval status (target: < 24 hours)
+4. Version control (track template versions: v1, v2, v3...)
+5. Usage tracking (log every template usage)
+6. Performance monitoring (delivery rate, engagement rate, conversion rate)
+
+**Stage 1 Templates** (5 core templates):
+- `order_confirmation` - Order created confirmation
+- `payment_request` - STK push payment request
+- `payment_confirmation` - Payment matched confirmation
+- `order_status` - Order status response
+- `support_acknowledgment` - Support request acknowledgment
+
+**Stage 2 Templates** (3 critical workflows):
+- `order_tracking_response` - Auto-response to "Where is my order?"
+- `payment_link_response` - Auto-response to "I want to pay"
+- `ticket_triage_acknowledgment` - Support ticket acknowledgment
+
+**Stage 3 Templates** (Post-purchase sequences):
+- `dispatch_notification` - Order dispatched notification
+- `delivery_confirmation` - Order delivered confirmation
+- `review_request` - Review request (24hrs after delivery)
+- `payment_reminder_1/2/final` - Cart recovery sequence (24hrs, 48hrs, 72hrs)
+
+**Stage 4 Templates** (10-15 per domain):
+- Orders: 5 templates (confirmation, reminder, payment link, dispatch, delivery)
+- Payments: 3 templates (STK push, confirmation, failure)
+- Support: 5 templates (acknowledgment, escalation, resolution, follow-up, satisfaction)
+- Returns: 2 templates (initiation, refund confirmation)
+
+**Total**: 40-60 templates by Stage 4 (exceeds research benchmark of 15 minimum)
 
 ### Legacy: Meta WhatsApp Business Cloud API (Not Available in Kenya)
 
@@ -431,6 +525,64 @@ Supabase trigger: ORDER.status = "Confirmed"
 
 ---
 
+## Template Governance Architecture
+
+### Template Lifecycle Management
+
+**Stage 1**: Foundation templates (5 core templates)
+- Pre-approval workflow established
+- Version control system
+- Usage tracking per template
+- Performance monitoring (delivery rate, engagement rate)
+
+**Stage 2**: Containment templates (3 critical workflows)
+- Intent-based template routing
+- Context-aware template selection
+- Bot response templates
+
+**Stage 3**: Integration templates (Post-purchase sequences)
+- Multi-message sequence templates
+- Cart recovery templates
+- Payment retry templates
+
+**Stage 4**: Maturity templates (A/B testing framework)
+- Template versioning with A/B tests
+- Performance comparison (delivery, engagement, conversion)
+- Optimization backlog (reduce steps, improve messaging)
+
+**Stage 5**: Predictive templates (AI-assisted routing)
+- Proactive notification templates
+- Retention campaign templates
+- Personalized template selection (based on customer tier, intent confidence)
+
+### Template Performance Tracking
+
+**Metrics Schema** (see [`ANALYTICS_SCHEMA.md`](./ANALYTICS_SCHEMA.md)):
+- Delivery rate (target: 90%+)
+- Engagement rate (clicks/opens per template)
+- Conversion rate (message → order per template)
+- Cost per template (if using per-message pricing)
+
+**Database Schema** (Supabase):
+```sql
+CREATE TABLE template_registry (
+  template_id TEXT PRIMARY KEY,
+  template_name TEXT NOT NULL,
+  category TEXT, -- 'orders', 'payments', 'support', 'returns'
+  version TEXT DEFAULT 'v1',
+  content TEXT NOT NULL,
+  variables JSONB, -- Array of variable names
+  approval_status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+  approval_timestamp TIMESTAMPTZ,
+  usage_count INT DEFAULT 0,
+  delivery_rate DECIMAL, -- Percentage
+  engagement_rate DECIMAL, -- Percentage
+  conversion_rate DECIMAL, -- Percentage
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
 ## Security Considerations
 
 - **API Keys:** Store securely (not hardcoded in scripts)
@@ -438,6 +590,7 @@ Supabase trigger: ORDER.status = "Confirmed"
 - **Row-Level Security:** Enable RLS in Supabase; traders can only see their own data
 - **eTIMS Compliance:** Invoice generation templates reviewed for KRA compliance
 - **Access Control:** Shared inbox with tags (not shared passwords); audit log of who did what
+- **Template Approval:** Template approval workflow enforced (Stage 1 gate)
 
 ---
 
@@ -460,5 +613,24 @@ This project uses `.cursor-rules` in the root directory to guide AI-assisted dev
 
 ---
 
-**Last Updated:** Update this document as architecture decisions change during build.
+## Integration Capabilities Reference
+
+**For detailed integration capability requirements and test cases, see:**
+- [`INTEGRATION_CAPABILITIES.md`](./INTEGRATION_CAPABILITIES.md) - Maximum capabilities required from each integration
+- [`../tests/INTEGRATION_TESTS.md`](../tests/INTEGRATION_TESTS.md) - Comprehensive test cases for all integrations
+
+**Key Capabilities Required:**
+- Webhook verification & security (HMAC signatures)
+- Idempotency keys (prevent duplicate processing)
+- Error handling & retry (exponential backoff)
+- Rate limiting & throttling (per-trader, per-workflow)
+- Monitoring & alerting (system health, failures)
+- Test data factories (automated test data generation)
+- Environment management (dev/staging/prod)
+- Logging & observability (structured logs, tracing)
+- Backup & disaster recovery (automated backups)
+- Multi-tenancy isolation (RLS policies verified)
+
+**Last Updated:** 2026-01-09  
+**Status**: Integration capabilities defined, implementation in progress
 

@@ -2,9 +2,25 @@
 
 **End-to-end business processes, lifecycle stages, and Nairobi-specific adaptations.**
 
+**Reference**: This document cross-references the 7-stage lifecycle (catalog → order → payment → dispatch → delivery → accounting → repeat) with the 5-stage research pattern (Foundation → Containment → Integration → Maturity → Predictive). See [`BUILD_PLAN.md`](./BUILD_PLAN.md) for stage-gated execution plan and [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
+
 ---
 
-## The Seven-Stage Lifecycle
+## The Seven-Stage Lifecycle (Order-to-Delivery Process)
+
+**Mapping to 5-Stage Research Pattern**:
+
+| 7-Stage Lifecycle | Stage 1: Foundation | Stage 2: Containment | Stage 3: Integration | Stage 4: Maturity | Stage 5: Predictive |
+|------------------|---------------------|---------------------|---------------------|-------------------|---------------------|
+| **1. Catalog Creation** | Manual entry (Google Sheets) | Intent detection for catalog queries | Auto-sync from ERPNext | Template-based broadcasts | AI-generated product recommendations |
+| **2. Sharing & Inquiry** | Simple broadcasts | Bot responses for common questions | Automated inquiry routing | A/B tested inquiry templates | Predictive inquiry anticipation |
+| **3. Order Capture** | Structured parsing (80%+ accuracy) | Intent detection for orders | Full automation (0% manual) | Optimized order flow | Predictive order suggestions |
+| **4. Payment (M-Pesa)** | Basic matching (95%+ auto-match) | Payment link bot responses | Retry logic, cart recovery | Payment analytics | Predictive payment reminders |
+| **5. Dispatch & Delivery** | Manual coordination | Order tracking bot responses | Full dispatch automation | Delivery optimization | Predictive delivery alerts |
+| **6. Recording & Accounting** | Basic invoice generation | Automated accounting | Full ERPNext integration | Accounting analytics | Predictive accounting insights |
+| **7. Repeat Orders & Trust** | Manual reorder prompts | Reorder bot responses | Automated reorder workflows | Retention campaigns | Predictive churn prevention |
+
+**Stages 1-7 are automated fully by Stage 3 (Integration Depth - Weeks 5-8). Stages 4-5 (Maturity & Predictive) optimize and enhance these workflows.**
 
 1. **Catalog Creation** → Traders list products (name, price, images, variants)
 2. **Sharing & Inquiry** → Products broadcast to customer WhatsApp groups; buyers ask questions (voice/text/image)
@@ -190,5 +206,87 @@ Before you scale beyond 5–10 traders:
 
 ---
 
-**Last Updated:** Update this document as workflows evolve during build.
+## Stage-by-Stage Workflow Evolution
+
+### Stage 1: Foundation (Weeks 1-2)
+
+**7-Stage Lifecycle Status**: Stages 1-4 partially automated (catalog, inquiry, order capture, payment basic matching)
+
+**Key Workflows**:
+- Order Capture: WhatsApp webhook → Order parser → Google Sheets
+- Payment Matching: M-Pesa webhook → Basic matching → Google Sheets
+- Template Responses: Simple confirmation messages
+
+**Automation Level**: 70% (manual review queue for edge cases)
+
+---
+
+### Stage 2: Containment (Weeks 3-4)
+
+**7-Stage Lifecycle Status**: Stages 1-4 fully automated with bot responses (intent detection, automated responses)
+
+**Key Workflows**:
+- Intent Detection: Message classification → Bot response or human handoff
+- Order Tracking: "Where is my order?" → Database query → Template response
+- Payment Links: "I want to pay" → STK push link → Template response
+- Ticket Triage: Support request → Review queue → Trader notification
+
+**Automation Level**: 60-80% containment (60-80% of queries resolved by bot)
+
+---
+
+### Stage 3: Integration (Weeks 5-8)
+
+**7-Stage Lifecycle Status**: **ALL 7 stages fully automated** (catalog → order → payment → dispatch → delivery → accounting → repeat)
+
+**Key Workflows**:
+- Post-Purchase Sequences: Order → Payment → Dispatch → Delivery → Review (automated sequence)
+- Cart Recovery: Abandoned orders → Reminder sequence (30-36% recovery rate)
+- Payment Retry Logic: STK push → Retry → Escalate (reduces manual follow-up by 70%)
+- Returns Initiation: Return request → Trader approval → Refund processing
+
+**Automation Level**: 95%+ (no manual data entry required)
+
+---
+
+### Stage 4: Maturity (Weeks 9-12)
+
+**7-Stage Lifecycle Status**: ALL 7 stages optimized with analytics and A/B testing
+
+**Key Workflows**:
+- Template A/B Testing: Test template variations → Optimize conversion
+- Send Time Optimization: Discover optimal send times (Kenya-specific, may differ from India/Brazil)
+- Workflow Optimization: Reduce steps in payment flow, improve intent prompts
+- ROI Quantification: Financial ROI calculation (target: 18:1+ ratio)
+
+**Automation Level**: 95%+ with data-driven optimizations
+
+---
+
+### Stage 5: Predictive (Weeks 13+)
+
+**7-Stage Lifecycle Status**: ALL 7 stages enhanced with predictive and proactive features
+
+**Key Workflows**:
+- Proactive Notifications: Delivery delay alerts, return window reminders
+- Retention Campaigns: Reorder nudges, churn prediction, win-back sequences
+- AI-Assisted Routing: Embeddings-based intent classification, context summarization
+- Revenue Workflows: Purchase → Recommendations, return → re-engagement
+
+**Automation Level**: 95%+ with AI-assisted optimization
+
+---
+
+## References
+
+- **Master Blueprint**: [`BUILD_PLAN.md`](./BUILD_PLAN.md) - Stage-gated execution plan
+- **Stage Definitions**: [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) - Detailed stage definitions and research citations
+- **Communication Rails**: [`COMMUNICATION_RAILS.md`](./COMMUNICATION_RAILS.md) - API contracts and data flows
+- **Analytics Schema**: [`ANALYTICS_SCHEMA.md`](./ANALYTICS_SCHEMA.md) - Metrics definitions and KPI tracking
+
+---
+
+**Last Updated:** 2026-01-09  
+**Status**: Stage 1 in progress (Days 1-5), Workflows mapped to 5-stage pattern  
+**Next Review**: End of Week 1 (Stage 1 gate review)
 

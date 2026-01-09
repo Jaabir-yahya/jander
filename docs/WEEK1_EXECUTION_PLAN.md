@@ -12,11 +12,16 @@
 
 This Week 1 plan plugs into your existing doc system:
 
+- **BUILD_PLAN.md** – **Master blueprint: Stage-gated 5-stage lifecycle** (Foundation → Containment → Integration → Maturity → Predictive)  
 - **ARCHITECTURE.md** – Overall system (WhatsApp → n8n → ERPNext → M-Pesa → riders)  
 - **WORKFLOWS.md** – 7-stage lifecycle (catalog → order → payment → dispatch → repeat)  
-- **BUILD_PLAN.md** – Week-by-week roadmap (**this file = Week 1 section**)  
+- **WEEK1_EXECUTION_PLAN.md** – **This file: Detailed Day 1-5 tasks for Stage 1 (Foundation)**  
+- **LIFECYCLE_STAGES.md** – Detailed stage definitions and research citations  
 - **CONTEXT.md** – Research: India/Nigeria/Brazil/Egypt/Kenya lessons and citations  
-- **HUMAN.md** – Your personal operating manual (daily rhythm, success metrics, handover)
+- **TEMPLATE_REGISTRY.md** – Stage 1 template governance system  
+- **COMMUNICATION_RAILS.md** – API contracts and data flows
+
+**Reference**: This file aligns with **Stage 1: Foundation** in [`BUILD_PLAN.md`](./BUILD_PLAN.md). See [`LIFECYCLE_STAGES.md`](./LIFECYCLE_STAGES.md) for detailed stage definitions.
 
 Keep this as the single Week 1 plan to avoid duplicate versions.
 
@@ -226,19 +231,41 @@ Revenue: High from growth SMEs (KSh 30K/mo × 5 = KSh 150K)
    - Configure: ERPNext company setup, product import, M-Pesa till number
    - Test run: 3–5 real orders from existing customers
 
-2. **Success Metrics Dashboard** (Google Sheets or simple dashboard)
+2. **Template Registry Setup** (NEW - Stage 1 Gate Requirement)
+   - File: `docs/TEMPLATE_REGISTRY.md` (reference for tracking)
+   - Pre-approve 5 core templates in SMSLeopard/Meta dashboard:
+     - `order_confirmation`: "Order confirmed: {{order_id}}, Total KSh {{total}}, Pay to {{till_number}}"
+     - `payment_request`: "Pay KSh {{amount}} for order {{order_id}}. Till: {{till_number}}"
+     - `payment_confirmation`: "Payment received! Order {{order_id}} ready for dispatch."
+     - `order_status`: "Order {{order_id}} status: {{status}}. [Tracking details]"
+     - `support_acknowledgment`: "Thank you for contacting us. We'll respond within {{time}}."
+   - Track approval status, version, usage count
+   - Target: < 24 hours approval time (Stage 1 gate)
+
+3. **Success Metrics Dashboard** (Google Sheets or simple dashboard)
    - Orders processed (count)
    - Parse accuracy (%)
    - Payment match rate (%)
+   - Delivery rate (%)
    - Time saved (hours/day)
+   - Template usage (per template)
    - Trader satisfaction (weekly feedback)
 
-3. **3 Core Hacks Validation**:
+4. **3 Core Hacks Validation**:
    - **Hack 1**: WhatsApp → ERPNext (no ERP UI exposure) → ✅ Works?
    - **Hack 2**: Structured template parsing → ✅ Reduces noise?
    - **Hack 3**: STK push + auto-match → ✅ Reconciliation pain gone?
 
-4. **Week 2 Preparation**:
+5. **Stage 1 Gate Review** (Before Week 2):
+   - Review Stage 1 gates in [`BUILD_PLAN.md`](./BUILD_PLAN.md):
+     - [ ] Webhook infrastructure operational
+     - [ ] Template registry with 5+ templates approved
+     - [ ] Delivery rate 90%+ (if Week 1 messages sent)
+     - [ ] Data capture working (all messages routable to database)
+     - [ ] Order parsing 80%+ accuracy (current: 83.3%)
+     - [ ] Compliance baseline met (template approval workflow)
+
+6. **Week 2 Preparation**:
    - Document onboarding process
    - Create simplified version for Eastleigh micro-sellers
    - Prepare case study template (if Week 1 successful)
