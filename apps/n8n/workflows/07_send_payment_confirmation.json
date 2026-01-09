@@ -1,0 +1,214 @@
+{
+  "name": "07_send_payment_confirmation",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "trade_id",
+              "name": "trade_id",
+              "value": "={{$json.trade_id}}",
+              "type": "string"
+            },
+            {
+              "id": "payment_id",
+              "name": "payment_id",
+              "value": "={{$json.payment_id}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/trades?trade_id=eq.{{$json.trade_id}}&select=buyer_phone,seller_phone,total_amount,product_name&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-order",
+      "name": "Get Order Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/payments?payment_id=eq.{{$json.payment_id}}&select=mpesa_ref,amount_kes&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-payment",
+      "name": "Get Payment Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp",
+        "options": {}
+      },
+      "id": "notify-buyer",
+      "name": "Notify Buyer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "03_send_whatsapp",
+        "options": {}
+      },
+      "id": "notify-seller",
+      "name": "Notify Seller",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/trades?trade_id=eq.{{$('Extract Input').first().json.trade_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "payment_confirmed_at",
+              "value": "={{$now.toISO()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-order",
+      "name": "Update Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "success",
+              "name": "success",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "buyer_notified",
+              "name": "buyer_notified",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "seller_notified",
+              "name": "seller_notified",
+              "value": "=true",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Extract Input": {
+      "main": [[{"node": "Get Order Details", "type": "main", "index": 0}, {"node": "Get Payment Details", "type": "main", "index": 0}]]
+    },
+    "Get Order Details": {
+      "main": [[{"node": "Notify Buyer", "type": "main", "index": 0}]]
+    },
+    "Get Payment Details": {
+      "main": [[{"node": "Notify Seller", "type": "main", "index": 0}]]
+    },
+    "Notify Buyer": {
+      "main": [[{"node": "Update Order", "type": "main", "index": 0}]]
+    },
+    "Notify Seller": {
+      "main": [[{"node": "Update Order", "type": "main", "index": 0}]]
+    },
+    "Update Order": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "⚠️ BLOCKED: Requires WhatsApp API credentials (workflow 3). Structure ready, activate after credentials obtained."
+}
+

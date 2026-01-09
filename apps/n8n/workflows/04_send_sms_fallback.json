@@ -1,0 +1,200 @@
+{
+  "name": "04_send_sms_fallback",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{$json.phone}}",
+              "type": "string"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "value": "={{$json.message}}",
+              "type": "string"
+            },
+            {
+              "id": "message_type",
+              "name": "message_type",
+              "value": "={{$json.message_type}}",
+              "type": "string"
+            },
+            {
+              "id": "fallback_reason",
+              "name": "fallback_reason",
+              "value": "={{$json.fallback_reason || 'whatsapp_timeout'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-transactional",
+              "leftValue": "={{$json.message_type}}",
+              "rightValue": "order",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-type",
+      "name": "Is Transactional?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format SMS (160 chars max)\n// Architecture: See docs/WAAS_ARCHITECTURE.md (Fallback Strategy)\n\nconst message = $input.item.json.message || '';\nconst maxLength = 160;\n\nlet smsMessage = message;\nif (smsMessage.length > maxLength) {\n  smsMessage = smsMessage.substring(0, maxLength - 30) + '... Reply HELP for support';\n} else if (smsMessage.length < maxLength - 30) {\n  smsMessage += '\\n\\nReply HELP for support';\n}\n\nreturn {\n  ...$input.item.json,\n  sms_message: smsMessage\n};"
+      },
+      "id": "format-sms",
+      "name": "Format SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SMS_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/sms/send' : ($env.AFRICASTALKING_API_BASE_URL || 'https://api.africastalking.com') + '/version1/messaging'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$env.SMS_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_API_KEY : 'ApiKey ' + $env.AFRICASTALKING_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$json.sms_message}}"
+            },
+            {
+              "name": "sender_id",
+              "value": "={{$env.SMS_SENDER_ID || 'TRADEFAC'}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-sms",
+      "name": "Send SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "05_log_message",
+        "options": {}
+      },
+      "id": "log-sms",
+      "name": "Log SMS",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "success",
+              "name": "success",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "channel",
+              "name": "channel",
+              "value": "=sms",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "=sent",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1250, 200]
+    }
+  ],
+  "connections": {
+    "Extract Input": {
+      "main": [[{"node": "Is Transactional?", "type": "main", "index": 0}]]
+    },
+    "Is Transactional?": {
+      "main": [
+        [{"node": "Format SMS", "type": "main", "index": 0}],
+        [{"node": "Return Result", "type": "main", "index": 0}]
+      ]
+    },
+    "Format SMS": {
+      "main": [[{"node": "Send SMS", "type": "main", "index": 0}]]
+    },
+    "Send SMS": {
+      "main": [[{"node": "Log SMS", "type": "main", "index": 0}]]
+    },
+    "Log SMS": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "1",
+  "notes": "⚠️ BLOCKED: Requires SMS provider API credentials. Structure ready, activate after credentials obtained."
+}
+

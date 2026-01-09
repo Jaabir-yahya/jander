@@ -46,7 +46,7 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 ---
 
 ### ⏳ Workflow 3: `03_send_whatsapp`
-**Status**: ⏳ Pending (needs WhatsApp API integration)  
+**Status**: ⏳ Structure created (needs WhatsApp API credentials to activate)  
 **Purpose**: Send WhatsApp message (with retry + timeout logic)  
 **Input**: phone, message, message_type, priority  
 **Output**: delivery_status, message_id, cost
@@ -64,11 +64,12 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 **Why Third**: Core messaging logic. All other workflows use this.
 
 **Blocked By**: WhatsApp API credentials needed (human intervention)
+**File**: `03_send_whatsapp.json` (structure ready, activate after credentials)
 
 ---
 
 ### ⏳ Workflow 4: `04_send_sms_fallback`
-**Status**: ⏳ Pending (needs SMS provider integration)  
+**Status**: ⏳ Structure created (needs SMS provider API credentials to activate)  
 **Purpose**: Fallback to SMS when WhatsApp fails  
 **Input**: phone, message, fallback_reason  
 **Output**: delivery_status, sms_provider_id
@@ -82,6 +83,7 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 **Why Fourth**: Critical for reliability. WhatsApp failures = lost transactions without this.
 
 **Blocked By**: SMS provider API credentials needed (human intervention)
+**File**: `04_send_sms_fallback.json` (structure ready, activate after credentials)
 
 ---
 
@@ -120,7 +122,7 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 ---
 
 ### ⏳ Workflow 7: `07_send_payment_confirmation`
-**Status**: ⏳ Pending  
+**Status**: ⏳ Structure created (needs WhatsApp API credentials to activate)  
 **Purpose**: Notify buyer + seller when payment confirmed  
 **Input**: order_id, payment_id  
 **Output**: confirmation_sent (buyer + seller)
@@ -133,6 +135,8 @@ Based on [`docs/FIRST_7_WORKFLOWS.md`](../../docs/FIRST_7_WORKFLOWS.md) - priori
 5. Update order: payment_confirmed_at
 
 **Why Seventh**: User trust depends on transparency. Always confirm payments.
+**Blocked By**: WhatsApp API credentials needed (workflow 3 dependency)
+**File**: `07_send_payment_confirmation.json` (structure ready, activate after credentials)
 
 ---
 
