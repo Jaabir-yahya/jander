@@ -1,0 +1,254 @@
+{
+  "name": "04_send_sms_fallback_v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sms-fallback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sms-fallback-v2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// BUSINESS LOGIC: Only SMS fallback for transactional messages\n// Architecture: See docs/NATIVE_INTEGRATIONS.md\n\nconst input = $input.item.json;\n\n// Check if fallback is allowed\nif (input.reason !== 'whatsapp_timeout' && input.reason !== 'whatsapp_failed') {\n  return { allowed: false, reason: 'invalid_reason' };\n}\n\n// Marketing messages should not fallback to SMS\nif (input.message_type === 'marketing') {\n  return { allowed: false, reason: 'marketing_no_fallback' };\n}\n\n// Transactional messages can fallback\nif (['order', 'payment_query', 'status_query', 'transactional'].includes(input.message_type)) {\n  return { allowed: true, ...input };\n}\n\nreturn { allowed: false, reason: 'unknown_message_type' };"
+      },
+      "id": "check-type",
+      "name": "Check Message Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-allowed",
+              "leftValue": "={{$json.allowed}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-allowed",
+      "name": "Fallback Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format SMS (160 chars max)\n// Architecture: See docs/NATIVE_INTEGRATIONS.md\n\nconst message = $input.item.json.message || '';\nconst maxLength = 160;\n\nlet smsMessage = message;\nif (smsMessage.length > maxLength) {\n  smsMessage = smsMessage.substring(0, maxLength - 30) + '... Reply HELP for support';\n} else if (smsMessage.length < maxLength - 30) {\n  smsMessage += '\\n\\nReply HELP for support';\n}\n\nreturn {\n  ...$input.item.json,\n  sms_message: smsMessage\n};"
+      },
+      "id": "format-sms",
+      "name": "Format SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SMS_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/sms/send' : ($env.AFRICASTALKING_API_BASE_URL || 'https://api.africastalking.com') + '/version1/messaging'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$env.SMS_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_API_KEY : 'ApiKey ' + $env.AFRICASTALKING_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$json.sms_message}}"
+            },
+            {
+              "name": "sender_id",
+              "value": "={{$env.SMS_SENDER_ID || 'TRADEFAC'}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-sms",
+      "name": "Send via SMSLeopard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/message_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{$('Check Message Type').first().json.phone}}"
+            },
+            {
+              "name": "channel",
+              "value": "=sms"
+            },
+            {
+              "name": "status",
+              "value": "=sent"
+            },
+            {
+              "name": "fallback_used",
+              "value": "=true"
+            },
+            {
+              "name": "fallback_reason",
+              "value": "={{$('Check Message Type').first().json.reason}}"
+            },
+            {
+              "name": "cost_kes",
+              "value": "=1.00"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-sms",
+      "name": "Log SMS Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "success",
+              "name": "success",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "channel",
+              "name": "channel",
+              "value": "=sms",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "=sent",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, reason: $json.reason}) }}",
+        "options": {}
+      },
+      "id": "return-error",
+      "name": "Return Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Check Message Type", "type": "main", "index": 0}]]
+    },
+    "Check Message Type": {
+      "main": [[{"node": "Fallback Allowed?", "type": "main", "index": 0}]]
+    },
+    "Fallback Allowed?": {
+      "main": [
+        [{"node": "Format SMS", "type": "main", "index": 0}],
+        [{"node": "Return Error", "type": "main", "index": 0}]
+      ]
+    },
+    "Format SMS": {
+      "main": [[{"node": "Send via SMSLeopard", "type": "main", "index": 0}]]
+    },
+    "Send via SMSLeopard": {
+      "main": [[{"node": "Log SMS Send", "type": "main", "index": 0}]]
+    },
+    "Log SMS Send": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "2",
+  "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for SMS provider API and Supabase. No custom services. See docs/NATIVE_INTEGRATIONS.md"
+}
+

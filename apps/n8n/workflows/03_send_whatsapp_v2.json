@@ -1,0 +1,606 @@
+{
+  "name": "03_send_whatsapp_v2",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{$json.phone}}",
+              "type": "string"
+            },
+            {
+              "id": "message_body",
+              "name": "message_body",
+              "value": "={{$json.message || $json.message_body}}",
+              "type": "string"
+            },
+            {
+              "id": "message_type",
+              "name": "message_type",
+              "value": "={{$json.message_type || 'transactional'}}",
+              "type": "string"
+            },
+            {
+              "id": "template_name",
+              "name": "template_name",
+              "value": "={{$json.template_name}}",
+              "type": "string"
+            },
+            {
+              "id": "template_params",
+              "name": "template_params",
+              "value": "={{$json.template_params || []}}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/message_logs?phone=eq.{{$json.phone}}&select=created_at&order=created_at.desc&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-window",
+      "name": "Check Conversation Window",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// BUSINESS LOGIC: Calculate if within 24h window\n// Architecture: See docs/NATIVE_INTEGRATIONS.md\n\nconst lastMessage = $input.item.json[0];\nconst now = Date.now();\nconst lastTime = lastMessage?.created_at ? new Date(lastMessage.created_at).getTime() : 0;\nconst withinWindow = (now - lastTime) < 86400000; // 24h in ms\n\nconst input = $('Extract Input').first().json;\n\nreturn { \n  ...input,\n  withinWindow, \n  messageType: input.message_type,\n  useSession: withinWindow,\n  useTemplate: !withinWindow,\n  cost_kes: withinWindow ? 0 : 0.75\n};"
+      },
+      "id": "calculate-cost",
+      "name": "Calculate Message Cost",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "use-session",
+                    "leftValue": "={{$json.useSession}}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "session"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "use-template",
+                    "leftValue": "={{$json.useTemplate}}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "template"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "determine-type",
+      "name": "Determine Template vs Session",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages' : 'https://graph.facebook.com/v18.0/' + $env.PHONE_NUMBER_ID + '/messages'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={{JSON.stringify({body: $json.message_body})}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-session",
+      "name": "Send Session Message (Free)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": "02_check_consent",
+        "options": {}
+      },
+      "id": "check-consent",
+      "name": "Check Consent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages' : 'https://graph.facebook.com/v18.0/' + $env.PHONE_NUMBER_ID + '/messages'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$('Calculate Message Cost').first().json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "template"
+            },
+            {
+              "name": "template",
+              "value": "={{JSON.stringify({name: $('Calculate Message Cost').first().json.template_name, language: {code: 'en_US'}, components: [{type: 'body', parameters: $('Calculate Message Cost').first().json.template_params || []}]})}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-template",
+      "name": "Send Template Message (Paid)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+      },
+      "id": "wait-delivery",
+      "name": "Wait for Delivery (60s timeout)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? ($env.SMSLEOPARD_API_BASE_URL || 'https://api.smsleopard.co.ke') + '/v1/messages/' + ($json.message_id || $json.messages[0]?.id) : 'https://graph.facebook.com/v18.0/' + ($json.message_id || $json.messages[0]?.id) + '?fields=status,timestamp'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$env.WHATSAPP_PROVIDER === 'smsleopard' ? 'Bearer ' + $env.SMSLEOPARD_TOKEN : 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-delivery",
+      "name": "Check Delivery Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "is-delivered",
+                    "leftValue": "={{$json.status || $json.messages[0]?.status}}",
+                    "rightValue": "delivered",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "delivered"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "is-read",
+                    "leftValue": "={{$json.status || $json.messages[0]?.status}}",
+                    "rightValue": "read",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "read"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "is-failed",
+                    "leftValue": "={{$json.status || $json.messages[0]?.status}}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "handle-delivery",
+      "name": "Handle Delivery Result",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/message_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{$('Extract Input').first().json.phone}}"
+            },
+            {
+              "name": "channel",
+              "value": "=whatsapp"
+            },
+            {
+              "name": "message_type",
+              "value": "={{$('Extract Input').first().json.message_type}}"
+            },
+            {
+              "name": "status",
+              "value": "=delivered"
+            },
+            {
+              "name": "message_id",
+              "value": "={{$json.message_id || $json.messages[0]?.id}}"
+            },
+            {
+              "name": "cost_kes",
+              "value": "={{$('Calculate Message Cost').first().json.cost_kes}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-success",
+      "name": "Log Success (Native Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "fallback-allowed",
+              "leftValue": "={{$('Extract Input').first().json.fallback_allowed}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-fallback",
+      "name": "Fallback Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2050, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.N8N_BASE_URL || 'http://localhost:5678'}}/webhook/sms-fallback",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{$('Extract Input').first().json.phone}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$('Extract Input').first().json.message_body}}"
+            },
+            {
+              "name": "reason",
+              "value": "=whatsapp_timeout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-fallback",
+      "name": "Trigger SMS Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2250, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/message_logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{$('Extract Input').first().json.phone}}"
+            },
+            {
+              "name": "channel",
+              "value": "=whatsapp"
+            },
+            {
+              "name": "status",
+              "value": "=failed"
+            },
+            {
+              "name": "failed_reason",
+              "value": "=delivery_timeout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-failure",
+      "name": "Log Failure (Native Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2250, 500]
+    }
+  ],
+  "connections": {
+    "Extract Input": {
+      "main": [[{"node": "Check Conversation Window", "type": "main", "index": 0}]]
+    },
+    "Check Conversation Window": {
+      "main": [[{"node": "Calculate Message Cost", "type": "main", "index": 0}]]
+    },
+    "Calculate Message Cost": {
+      "main": [[{"node": "Determine Template vs Session", "type": "main", "index": 0}]]
+    },
+    "Determine Template vs Session": {
+      "main": [
+        [{"node": "Send Session Message (Free)", "type": "main", "index": 0}],
+        [{"node": "Check Consent", "type": "main", "index": 0}]
+      ]
+    },
+    "Check Consent": {
+      "main": [[{"node": "Send Template Message (Paid)", "type": "main", "index": 0}]]
+    },
+    "Send Session Message (Free)": {
+      "main": [[{"node": "Wait for Delivery (60s timeout)", "type": "main", "index": 0}]]
+    },
+    "Send Template Message (Paid)": {
+      "main": [[{"node": "Wait for Delivery (60s timeout)", "type": "main", "index": 0}]]
+    },
+    "Wait for Delivery (60s timeout)": {
+      "main": [[{"node": "Check Delivery Status", "type": "main", "index": 0}]]
+    },
+    "Check Delivery Status": {
+      "main": [[{"node": "Handle Delivery Result", "type": "main", "index": 0}]]
+    },
+    "Handle Delivery Result": {
+      "main": [
+        [{"node": "Log Success (Native Supabase)", "type": "main", "index": 0}],
+        [{"node": "Log Success (Native Supabase)", "type": "main", "index": 0}],
+        [{"node": "Check Fallback Allowed?", "type": "main", "index": 0}]
+      ]
+    },
+    "Check Fallback Allowed?": {
+      "main": [
+        [{"node": "Trigger SMS Fallback", "type": "main", "index": 0}],
+        [{"node": "Log Failure (Native Supabase)", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "2",
+  "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for WhatsApp API and Supabase. No custom services. See docs/NATIVE_INTEGRATIONS.md"
+}
+

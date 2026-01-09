@@ -1,0 +1,225 @@
+{
+  "name": "01_classify_message_v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "classify-message-v2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{$json.message?.from || $json.entry[0]?.changes[0]?.value?.messages[0]?.from}}",
+              "type": "string"
+            },
+            {
+              "id": "message_text",
+              "name": "message_text",
+              "value": "={{$json.message?.text?.body || $json.entry[0]?.changes[0]?.value?.messages[0]?.text?.body || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "message_id",
+              "name": "message_id",
+              "value": "={{$json.message?.id || $json.entry[0]?.changes[0]?.value?.messages[0]?.id}}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{$json.message?.timestamp || $json.entry[0]?.changes[0]?.value?.messages[0]?.timestamp || Math.floor(Date.now() / 1000)}}",
+              "type": "number"
+            },
+            {
+              "id": "message_type",
+              "name": "message_type",
+              "value": "={{$json.message?.type || $json.entry[0]?.changes[0]?.value?.messages[0]?.type || 'text'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-message",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// BUSINESS LOGIC: Classify message type\n// Architecture: See docs/NATIVE_INTEGRATIONS.md\n\nconst text = ($input.item.json.message_text || '').toLowerCase();\nlet messageType = 'unknown';\n\n// Order keywords (English, Swahili, Sheng)\nif (text.match(/order|nataka|taka|nimtaki|buy|want|nunua/i)) {\n  messageType = 'order';\n}\n// Payment query\nelse if (text.match(/payment|paid|pesa|lipa|malipo/i)) {\n  messageType = 'payment_query';\n}\n// Status query\nelse if (text.match(/status|where|delivery|wapi|hali/i)) {\n  messageType = 'status_query';\n}\n// Support\nelse if (text.match(/help|support|saaidie|msaada|assist/i)) {\n  messageType = 'support';\n}\n\nreturn { \n  message_type: messageType, \n  ...$input.item.json \n};"
+      },
+      "id": "classify-type",
+      "name": "Classify Message Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/conversations?phone=eq.{{$json.phone}}&select=conversation_window_expires_at,last_message_at&order=last_message_at.desc&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "query-conversation",
+      "name": "Query Conversation State",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/buyers?phone=eq.{{$json.phone}}&select=buyer_id,phone&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-buyer",
+      "name": "Check Buyer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/sellers?phone=eq.{{$json.phone}}&select=seller_id,phone&limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-seller",
+      "name": "Check Seller",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// BUSINESS LOGIC: Determine user type and conversation window\n// Architecture: See docs/NATIVE_INTEGRATIONS.md\n\nconst buyerResult = $('Check Buyer').first()?.json || [];\nconst sellerResult = $('Check Seller').first()?.json || [];\nconst conversationData = $('Query Conversation State').first()?.json || [];\nconst messageData = $input.item.json;\n\nlet userType = 'new_user';\nif (sellerResult.length > 0) {\n  userType = 'seller';\n} else if (buyerResult.length > 0) {\n  userType = 'buyer';\n}\n\n// Check conversation window (24h from last message)\nconst conversation = conversationData[0];\nconst now = new Date();\nconst expiresAt = conversation?.conversation_window_expires_at \n  ? new Date(conversation.conversation_window_expires_at) \n  : null;\nconst sessionAllowed = expiresAt && expiresAt > now;\n\n// Determine priority\nlet priority = 'low';\nif (['order', 'payment_query'].includes(messageData.message_type)) {\n  priority = 'high';\n} else if (['status_query', 'support'].includes(messageData.message_type)) {\n  priority = 'medium';\n}\n\n// Determine fallback allowed\nconst fallbackAllowed = ['order', 'payment_query', 'status_query'].includes(messageData.message_type);\n\nreturn {\n  ...messageData,\n  user_type: userType,\n  priority: priority,\n  session_allowed: sessionAllowed,\n  fallback_allowed: fallbackAllowed\n};"
+      },
+      "id": "determine-user",
+      "name": "Determine User Type & Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge Classification",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "response",
+      "name": "Return Classification",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [[{"node": "Extract Message Data", "type": "main", "index": 0}]]
+    },
+    "Extract Message Data": {
+      "main": [[{"node": "Classify Message Type", "type": "main", "index": 0}]]
+    },
+    "Classify Message Type": {
+      "main": [[{"node": "Query Conversation State", "type": "main", "index": 0}]]
+    },
+    "Query Conversation State": {
+      "main": [[{"node": "Check Buyer", "type": "main", "index": 0}, {"node": "Check Seller", "type": "main", "index": 0}]]
+    },
+    "Check Buyer": {
+      "main": [[{"node": "Determine User Type & Window", "type": "main", "index": 0}]]
+    },
+    "Check Seller": {
+      "main": [[{"node": "Determine User Type & Window", "type": "main", "index": 0}]]
+    },
+    "Determine User Type & Window": {
+      "main": [[{"node": "Merge Classification", "type": "main", "index": 0}]]
+    },
+    "Merge Classification": {
+      "main": [[{"node": "Return Classification", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T00:00:00.000Z",
+  "versionId": "2",
+  "notes": "✅ REFACTORED: Uses native n8n HTTP Request nodes for Supabase queries. No custom services. See docs/NATIVE_INTEGRATIONS.md"
+}
+
